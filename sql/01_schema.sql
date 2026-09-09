@@ -129,10 +129,10 @@ CREATE TABLE IF NOT EXISTS applications (
         REFERENCES students(student_id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
-CREATE INDEX idx_students_department_year ON students(department, passing_year);
-CREATE INDEX idx_students_cgpa ON students(cgpa);
-CREATE INDEX idx_eligibility_company ON eligibility(company_id);
-CREATE INDEX idx_notifications_job ON notifications(job_id);
-CREATE INDEX idx_applications_status ON applications(status);
+CREATE INDEX idx_students_department_year ON students (department, passing_year);
+CREATE INDEX idx_students_cgpa ON students (cgpa);
+CREATE INDEX idx_eligibility_company ON eligibility (company_id);
+CREATE INDEX idx_notifications_job ON notifications (job_id);
+CREATE INDEX idx_applications_status ON applications (status);
 
 SELECT 'Schema created successfully.' AS status;
