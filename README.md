@@ -4,7 +4,7 @@
 
 The **Placement Eligibility and Resume Screening Portal** is a client-server based placement management system developed using **Java TCP Socket Programming, JDBC, and MySQL**.
 
-The main purpose of the system is to automate the college placement process by allowing students to manage their profiles and resumes, while Placement Officers and Company HR can manage recruitment drives, check candidate eligibility, search candidates, and perform placement-related activities.
+The main purpose of the system is to automate the college placement process by allowing students / faculty to manage profiles and resumes, while Placement Officers and Company HR can manage recruitment drives, check candidate eligibility, search candidates, and perform placement-related activities.
 
 The system follows a centralized client-server architecture where multiple clients communicate with a TCP server. The server processes client requests, performs business logic, communicates with the database using JDBC, and sends the result back to the client.
 
