@@ -10,16 +10,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.regex.PatternSyntaxException;
 
-/**
- * Socket-connected Dean Dashboard.
- *
- * Uses only data exposed by the existing placement backend:
- * GET_DASHBOARD_STATS, GET_JOBS, GET_STUDENTS,
- * GET_ELIGIBLE_STUDENTS and GET_NOTIFICATIONS.
- *
- * This dashboard intentionally does not display "Placed Students" or
- * "Placement Rate" because the current backend has no placement-status field.
- */
+
 public class DeanDashboard extends JFrame {
 
     private static final Color SIDEBAR_GREEN = new Color(20, 83, 45);
