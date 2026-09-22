@@ -653,7 +653,7 @@ public class LoginFrame extends JFrame {
         JFrame dashboard;
         String normalized = role == null ? "" : role.trim().toUpperCase();
         switch (normalized) {
-            case "TPO" -> dashboard = new TPODashboard();
+           case "TPO" -> dashboard = new TPODashboard(authenticatedDisplayName, sessionToken);
             case "TPC" -> dashboard = new TPCDashboard(authenticatedDisplayName, sessionToken);
             case "DIRECTOR" -> dashboard = new DirectorDashboard();
             case "DEAN" -> dashboard = new DeanDashboard();
