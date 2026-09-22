@@ -1,7 +1,10 @@
+package com.placement.ui;
+
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
 import java.awt.geom.RoundRectangle2D;
+import com.placement.sockets.SocketClient;
 public class LoginFrame extends JFrame {
     // =========================================================
     // GREEN THEME
@@ -37,6 +40,8 @@ public class LoginFrame extends JFrame {
     private JLabel statusLabel;
     private JButton loginButton;
     private JButton clearButton;
+    private String sessionToken;
+    private String authenticatedDisplayName;
     // =========================================================
     // CONSTRUCTOR
     // =========================================================
@@ -338,11 +343,7 @@ public class LoginFrame extends JFrame {
         roleComboBox =
                 new JComboBox<>(
                         new String[]{
-                                "TPO - Training & Placement Officer",
-                                "TPC - Training & Placement Coordinator",
-                                "Director",
-                                "Dean",
-                                "Student"
+                                "TPO", "TPC", "Director", "Dean", "Student"
                         }
                 );
         styleComboBox(
@@ -623,32 +624,25 @@ public class LoginFrame extends JFrame {
             String username,
             String password,
             String role) {
-        /*
-         * TEMPORARY LOGIN
-         *
-         * Replace this with TCP Socket communication.
-         *
-         * The actual server should validate:
-         *
-         * username
-         * password
-         * role
-         * account status
-         *
-         * and return:
-         *
-         * authentication result
-         * session information
-         */
         try {
-            Thread.sleep(800);
-        } catch (InterruptedException e) {
-            Thread.currentThread()
-                    .interrupt();
+            SocketClient.Response response = new SocketClient().sendRequest(
+                    "LOGIN", role, username, password);
+            if (!response.success) {
+                showError(response.payload);
+                return false;
+            }
+            String[] parts = response.parts();
+            if (parts.length < 1 || parts[0].isBlank()) {
+                showError("Server returned an invalid session.");
+                return false;
+            }
+            sessionToken = parts[0];
+            authenticatedDisplayName = parts.length > 1 ? parts[1] : username;
+            return true;
+        } catch (Exception ex) {
+            showError("Unable to connect to server: " + ex.getMessage());
+            return false;
         }
-        // Temporary test credentials
-        return username.equals("admin")
-                && password.equals("admin");
     }
     // =========================================================
     // OPEN DASHBOARD
@@ -656,24 +650,20 @@ public class LoginFrame extends JFrame {
     private void openDashboard(
             String username,
             String role) {
-        JOptionPane.showMessageDialog(
-                this,
-                "Welcome " + username
-                        + "\n\nRole: " + role,
-                "Login Successful",
-                JOptionPane.INFORMATION_MESSAGE
-        );
-        /*
-         * Later replace with:
-         *
-         * switch(role)
-         *
-         * TPO       -> TPODashboard
-         * TPC       -> TPCDashboard
-         * Director  -> DirectorDashboard
-         * Dean      -> DeanDashboard
-         * Student   -> StudentDashboard
-         */
+        JFrame dashboard;
+        String normalized = role == null ? "" : role.trim().toUpperCase();
+        switch (normalized) {
+            case "TPO" -> dashboard = new TPODashboard();
+            case "TPC" -> dashboard = new TPCDashboard(authenticatedDisplayName, sessionToken);
+            case "DIRECTOR" -> dashboard = new DirectorDashboard();
+            case "DEAN" -> dashboard = new DeanDashboard();
+            case "STUDENT" -> dashboard = new StudentDashboard(authenticatedDisplayName, username);
+            default -> {
+                showError("Unsupported role: " + role);
+                return;
+            }
+        }
+        dashboard.setVisible(true);
         dispose();
     }
     // =========================================================
