@@ -343,7 +343,7 @@ public class LoginFrame extends JFrame {
         roleComboBox =
                 new JComboBox<>(
                         new String[]{
-                                "TPO", "TPC", "Director", "Dean", "Student"
+                                "TPO", "TPC", "Director", "Dean", "Admin", "Student"
                         }
                 );
         styleComboBox(
@@ -653,11 +653,12 @@ public class LoginFrame extends JFrame {
         JFrame dashboard;
         String normalized = role == null ? "" : role.trim().toUpperCase();
         switch (normalized) {
-           case "TPO" -> dashboard = new TPODashboard(authenticatedDisplayName, sessionToken);
+            case "TPO" -> dashboard = new TPODashboard(authenticatedDisplayName, sessionToken);
             case "TPC" -> dashboard = new TPCDashboard(authenticatedDisplayName, sessionToken);
-            case "DIRECTOR" -> dashboard = new DirectorDashboard();
-            case "DEAN" -> dashboard = new DeanDashboard();
-            case "STUDENT" -> dashboard = new StudentDashboard(authenticatedDisplayName, username);
+            case "DIRECTOR" -> dashboard = new DirectorDashboard(authenticatedDisplayName, sessionToken);
+            case "DEAN" -> dashboard = new DeanDashboard(authenticatedDisplayName, sessionToken);
+            case "STUDENT" -> dashboard = new StudentDashboard(authenticatedDisplayName, username, sessionToken);
+            case "ADMIN" -> dashboard = new AdminDashboard(authenticatedDisplayName, sessionToken);
             default -> {
                 showError("Unsupported role: " + role);
                 return;

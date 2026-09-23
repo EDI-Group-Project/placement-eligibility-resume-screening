@@ -17,6 +17,9 @@ Write-Host "Enter the MySQL password for user '$MySqlUser'."
 cmd /c "mysql -h $MySqlHost -P $MySqlPort -u $MySqlUser -p < sql\01_schema.sql"
 if ($LASTEXITCODE -ne 0) { throw "Schema creation failed." }
 
+cmd /c "mysql -h $MySqlHost -P $MySqlPort -u $MySqlUser -p < sql\03_migrate_roles.sql"
+if ($LASTEXITCODE -ne 0) { throw "Role migration failed." }
+
 cmd /c "mysql -h $MySqlHost -P $MySqlPort -u $MySqlUser -p < sql\02_seed.sql"
 if ($LASTEXITCODE -ne 0) { throw "Seed data loading failed." }
 

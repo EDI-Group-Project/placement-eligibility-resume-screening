@@ -23,8 +23,14 @@ VALUES
 ('Neha Deshmukh','neha@college.com',@PASS123,'TPC','IT','9876500002'),
 ('Rajesh Patil','rajesh@college.com',@PASS123,'DIRECTOR',NULL,'9876500003'),
 ('Pooja Joshi','pooja@college.com',@PASS123,'DEAN','ECE','9876500004'),
-('Sanjay More','sanjay@college.com',@PASS123,'FACULTY','IT','9876500005'),
-('System Admin','admin@college.com',@PASS123,'ADMIN',NULL,'9876500006')
+('Sanjay More','sanjay@college.com',@PASS123,'FACULTY','IT','9876500005')
+ON DUPLICATE KEY UPDATE name=VALUES(name), password=VALUES(password), role=VALUES(role),
+department=VALUES(department), phone=VALUES(phone), is_active=TRUE;
+
+INSERT INTO faculty
+(name,email,password,role,department,phone)
+VALUES
+('System Admin','admin@college.com',@PASS123,'ADMIN','Administration','9876500099')
 ON DUPLICATE KEY UPDATE name=VALUES(name), password=VALUES(password), role=VALUES(role),
 department=VALUES(department), phone=VALUES(phone), is_active=TRUE;
 
