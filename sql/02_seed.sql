@@ -69,6 +69,16 @@ is_active=TRUE;
 INSERT INTO faculty
 (name,email,password,role,department,phone)
 VALUES
+('Aditi Deshpande','aditi@college.com',@PASS123,'TPO','CSE','9876500006'),
+('Vikram Joshi','vikram@college.com',@PASS123,'TPC','IT','9876500007')
+ON DUPLICATE KEY UPDATE
+name=VALUES(name), password=VALUES(password), role=VALUES(role),
+department=VALUES(department), phone=VALUES(phone), is_active=TRUE;
+
+
+INSERT INTO faculty
+(name,email,password,role,department,phone)
+VALUES
 ('System Admin','admin@college.com',@PASS123,'ADMIN','Administration','9876500099')
 ON DUPLICATE KEY UPDATE
 name=VALUES(name),

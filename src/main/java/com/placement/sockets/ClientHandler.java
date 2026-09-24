@@ -23,7 +23,7 @@ public class ClientHandler implements Runnable {
                 case "LOGIN"->login(r,w);case "REGISTER_STUDENT"->register(r,w);case "GET_JOBS"->getJobs(r,w);case "ADD_JOB"->addJob(r,w);
                 case "GET_STUDENTS"->getStudents(r,w);case "SEARCH_SORT_FILTER_STUDENTS"->queryStudents(r,w);case "GET_ELIGIBLE_STUDENTS"->eligible(r,w);
                 case "SEND_NOTIFICATION"->sendNotification(r,w);case "SEND_GENERAL_NOTIFICATION"->sendGeneral(r,w);case "GET_NOTIFICATIONS"->getNotifications(r,w);
-                case "GET_DASHBOARD_STATS"->stats(r,w);case "ADD_FACULTY"->addFaculty(r,w);case "GET_FACULTY"->getFaculty(r,w);
+                case "GET_DASHBOARD_STATS"->stats(r,w);case "ADD_FACULTY"->addFaculty(r,w);case "ADD_STUDENT"->addStudent(r,w);case "GET_FACULTY"->getFaculty(r,w);
                 case "APPLY_JOB"->apply(r,w);case "GET_MY_APPLICATIONS"->myApplications(r,w);case "LOGOUT"->logout(r,w);
                 default->w.println("FAILED|Unknown command: "+cmd);
             }
@@ -44,6 +44,26 @@ public class ClientHandler implements Runnable {
     private void getNotifications(BufferedReader r,PrintWriter w)throws Exception{String t=token(r,w);if(t==null||!role(t,w,"ADMIN","TPO","TPC","DIRECTOR","DEAN","STUDENT"))return;write(w,notifications.getHistory().stream().map(Notification::toProtocolLine).toList());}
     private void stats(BufferedReader r,PrintWriter w)throws Exception{String t=token(r,w);if(t==null||!role(t,w,"ADMIN","TPO","TPC","DIRECTOR","DEAN"))return;List<JobPosting> js=jobs.getAllJobs();List<Student> ss=students.getAllStudents();int pending=0;for(JobPosting j:js)pending+=students.getEligibleUnnotifiedStudents(j).size();w.println("SUCCESS|"+js.size()+"|"+pending+"|"+notifications.getHistory().size()+"|"+ss.size());}
     private void addFaculty(BufferedReader r,PrintWriter w)throws Exception{String t=token(r,w);if(t==null||!role(t,w,"ADMIN"))return;String n=r.readLine(),e=r.readLine(),p=r.readLine(),ro=r.readLine(),d=r.readLine(),ph=r.readLine();if(missing(n,"Name",w)||missing(e,"Email",w)||missing(p,"Password",w))return;w.println("SUCCESS|"+admin.addFaculty(n,e,p,ro,d,ph));}
+    private void addStudent(BufferedReader r,PrintWriter w)throws Exception{
+        String t=token(r,w);
+        if(t==null||!role(t,w,"ADMIN"))return;
+        Student s=new Student();
+        s.setPrn(r.readLine());
+        s.setName(r.readLine());
+        s.setEmail(r.readLine());
+        String p=r.readLine();
+        s.setDepartment(r.readLine());
+        s.setCgpa(d(r.readLine()));
+        s.setPassingYear(i(r.readLine()));
+        s.setBacklogs(i(r.readLine()));
+        s.setSemester(i(r.readLine()));
+        s.setPhone(r.readLine());
+        s.setSkills(r.readLine());
+        if(missing(s.getName(),"Name",w)||missing(s.getEmail(),"Email",w)||missing(p,"Password",w))return;
+        String result=registration.registerStudent(s,p);
+        if("SUCCESS".equals(result))w.println("SUCCESS|Student added successfully.");
+        else w.println("FAILED|"+result);
+    }
     private void getFaculty(BufferedReader r,PrintWriter w)throws Exception{String t=token(r,w);if(t==null||!role(t,w,"ADMIN","DIRECTOR","DEAN"))return;write(w,admin.getFaculty().stream().map(f->String.join("|",String.valueOf(f.getFacultyId()),safe(f.getName()),safe(f.getEmail()),safe(f.getRole()),safe(f.getDepartment()),safe(f.getPhone()))).toList());}
     private void apply(BufferedReader r,PrintWriter w)throws Exception{String t=token(r,w);if(t==null||!role(t,w,"STUDENT"))return;String id=r.readLine();if(jobs.getJob(id)==null){w.println("FAILED|Job not found.");return;}w.println("SUCCESS|"+applications.apply(id,SessionManager.getAccountId(t)));}
     private void myApplications(BufferedReader r,PrintWriter w)throws Exception{String t=token(r,w);if(t==null||!role(t,w,"STUDENT"))return;write(w,applications.getForStudent(SessionManager.getAccountId(t)).stream().map(Application::toProtocolLine).toList());}
