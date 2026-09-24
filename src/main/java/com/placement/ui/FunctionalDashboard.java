@@ -1,5 +1,6 @@
 package com.placement.ui;
-
+import java.util.ArrayList;
+import java.util.List;
 import com.placement.sockets.SocketClient;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -258,11 +259,13 @@ public class FunctionalDashboard extends JFrame {
         JPanel p = page();
         JPanel top = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         top.setOpaque(false);
-        JButton add = btn("Add User");
-        add.addActionListener(e -> addFaculty());
+        JButton addUser = btn("Add User");
+        addUser.addActionListener(e -> addFaculty());
+        JButton addStudent = btn("Add Student");
+        addStudent.addActionListener(e -> addStudent());
         JButton ref = btn("Refresh");
         ref.addActionListener(e -> loadFaculty());
-        top.add(add); top.add(ref);
+        top.add(addUser); top.add(addStudent); top.add(ref);
         p.add(top, BorderLayout.NORTH);
         style(facultyT);
         p.add(new JScrollPane(facultyT), BorderLayout.CENTER);
@@ -376,10 +379,79 @@ public class FunctionalDashboard extends JFrame {
     }
 
     private void notifyAllStudents() {
-        JTextField s = new JTextField(), m = new JTextField(); JPanel p = new JPanel(new GridLayout(0, 2, 8, 8)); add(p, "Subject", s); add(p, "Message", m);
-        if (JOptionPane.showConfirmDialog(this, p, "Send Notification", JOptionPane.OK_CANCEL_OPTION) != JOptionPane.OK_OPTION) return;
-        try { SocketClient.Response r = client.sendRequest("SEND_GENERAL_NOTIFICATION", token, s.getText(), m.getText(), "ALL"); if (!r.success) throw new Exception(r.payload); loadNotes(); loadStats(); }
-        catch (Exception e) { JOptionPane.showMessageDialog(this, e.getMessage()); }
+        int row = jobsT.getSelectedRow();
+        if (row < 0) {
+            JOptionPane.showMessageDialog(this, "Select a job first so the notification can be linked to its Job ID.", "Send Notification", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        int modelRow = jobsT.convertRowIndexToModel(row);
+        String jobId = String.valueOf(jobs.getValueAt(modelRow, 0));
+        try {
+            SocketClient.ListResponse er = client.sendListRequest("GET_ELIGIBLE_STUDENTS", token, jobId);
+            if (!er.success) throw new Exception(er.errorMessage);
+            List<String> prns = new ArrayList<>();
+            for (String line : er.lines) {
+                String[] x = line.split("\\|", -1);
+                if (x.length > 0 && !x[0].isBlank()) prns.add(x[0]);
+            }
+            if (prns.isEmpty()) {
+                JOptionPane.showMessageDialog(this, "No eligible students are available for " + jobId + ".", "Send Notification", JOptionPane.INFORMATION_MESSAGE);
+                return;
+            }
+            JTextField subject = new JTextField("Placement Opportunity");
+            JTextField message = new JTextField("You are eligible to apply for " + jobId + ".");
+            JPanel panel = new JPanel(new GridLayout(0, 2, 8, 8));
+            add(panel, "Job ID", new JLabel(jobId));
+            add(panel, "Subject", subject);
+            add(panel, "Message", message);
+            add(panel, "Recipients", new JLabel(String.valueOf(prns.size()) + " eligible students"));
+            if (JOptionPane.showConfirmDialog(this, panel, "Send Notification", JOptionPane.OK_CANCEL_OPTION) != JOptionPane.OK_OPTION) return;
+            SocketClient.Response r = client.sendRequest("SEND_NOTIFICATION", token, jobId, String.join(",", prns));
+            if (!r.success) throw new Exception(r.payload);
+            loadNotes(); loadStats();
+            JOptionPane.showMessageDialog(this, "Notification sent for " + jobId + ".", "Notification Sent", JOptionPane.INFORMATION_MESSAGE);
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, e.getMessage(), "Send Notification", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private void addStudent() {
+        JTextField prn = new JTextField();
+        JTextField name = new JTextField();
+        JTextField email = new JTextField();
+        JPasswordField password = new JPasswordField("pass1234");
+        JComboBox<String> department = box("CSE", "IT", "ECE", "MECH", "CIVIL");
+        JTextField cgpa = new JTextField("7.0");
+        JTextField year = new JTextField("2027");
+        JTextField backlogs = new JTextField("0");
+        JTextField semester = new JTextField("5");
+        JTextField phone = new JTextField();
+        JTextField skills = new JTextField("Java,SQL,Python");
+
+        JPanel panel = new JPanel(new GridLayout(0, 2, 8, 8));
+        add(panel, "PRN (optional)", prn);
+        add(panel, "Name", name);
+        add(panel, "Email", email);
+        add(panel, "Password", password);
+        panel.add(new JLabel("Department")); panel.add(department);
+        add(panel, "CGPA", cgpa);
+        add(panel, "Passing Year", year);
+        add(panel, "Backlogs", backlogs);
+        add(panel, "Semester", semester);
+        add(panel, "Phone", phone);
+        add(panel, "Skills", skills);
+
+        if (JOptionPane.showConfirmDialog(this, panel, "Add Student", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) return;
+        try {
+            SocketClient.Response r = client.sendRequest("ADD_STUDENT", token, prn.getText().trim(), name.getText().trim(), email.getText().trim(),
+                    new String(password.getPassword()), (String) department.getSelectedItem(), cgpa.getText().trim(), year.getText().trim(),
+                    backlogs.getText().trim(), semester.getText().trim(), phone.getText().trim(), skills.getText().trim());
+            if (!r.success) throw new Exception(r.payload);
+            loadStudents(); loadStats();
+            JOptionPane.showMessageDialog(this, "Student added successfully.", "Add Student", JOptionPane.INFORMATION_MESSAGE);
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, e.getMessage(), "Add Student", JOptionPane.ERROR_MESSAGE);
+        }
     }
 
     private void addFaculty() {
