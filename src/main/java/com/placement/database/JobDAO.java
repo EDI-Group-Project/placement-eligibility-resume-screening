@@ -6,7 +6,7 @@ import java.util.*;
 
 public class JobDAO {
     private static final String SELECT =
-            "SELECT j.job_id,j.company_id,c.company_name,j.job_profile,j.min_package,j.deadline," +
+            "SELECT j.job_id AS job_identifier,j.company_id,c.company_name,j.job_profile,j.min_package,j.deadline," +
             "e.min_cgpa,e.max_backlogs,e.department,e.passing_year,e.required_skills " +
             "FROM job_postings j JOIN company c ON c.company_id=j.company_id " +
             "JOIN eligibility e ON e.eligibility_id=j.eligibility_id ";
@@ -54,7 +54,7 @@ public class JobDAO {
 
     private JobPosting map(ResultSet rs)throws SQLException{
         JobPosting j=new JobPosting();
-        j.setId(rs.getString("job_id")); j.setCompanyId(rs.getInt("company_id"));
+        j.setId(rs.getString("job_identifier")); j.setCompanyId(rs.getInt("company_id"));
         j.setCompany(rs.getString("company_name")); j.setRole(rs.getString("job_profile"));
         j.setMinPackage(rs.getString("min_package")); j.setMinCgpa(rs.getDouble("min_cgpa"));
         String b=rs.getString("department"); j.setBranches(csv(b));

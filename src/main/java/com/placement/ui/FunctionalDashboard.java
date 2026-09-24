@@ -2,11 +2,12 @@ package com.placement.ui;
 
 import com.placement.sockets.SocketClient;
 import javax.swing.*;
+import javax.swing.border.EmptyBorder;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
+import javax.swing.table.JTableHeader;
 import java.awt.*;
 import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 
 public class FunctionalDashboard extends JFrame {
@@ -15,26 +16,27 @@ public class FunctionalDashboard extends JFrame {
     private final SocketClient client = new SocketClient();
     private final CardLayout cards = new CardLayout();
     private final JPanel content = new JPanel(cards);
+
     private final DefaultTableModel jobs = model(new String[]{"Job ID", "Company", "Role", "Package", "Min CGPA", "Branches", "Backlogs", "Year", "Deadline"});
     private final DefaultTableModel students = model(new String[]{"PRN", "Name", "Email", "Department", "CGPA", "Year", "Backlogs", "Semester", "Phone", "Skills"});
     private final DefaultTableModel notes = model(new String[]{"ID", "Job ID", "Subject", "Message", "Group", "Recipients", "Created"});
     private final DefaultTableModel faculty = model(new String[]{"ID", "Name", "Email", "Role", "Department", "Phone"});
+
     private final JTable jobsT = new JTable(jobs), studentsT = new JTable(students), notesT = new JTable(notes), facultyT = new JTable(faculty);
     private JTextField search;
     private JComboBox<String> dept, year, cgpa, back, sem, sort;
     private JLabel stats;
-    private JLabel reportStats;
-    private static final DateTimeFormatter DATE = DateTimeFormatter.ISO_LOCAL_DATE;
 
     public FunctionalDashboard(String role, String name, String token) {
-        this.role = role.toUpperCase();
-        this.name = name == null || name.isBlank() ? role : name;
+        this.role = role == null ? "" : role.trim().toUpperCase();
+        this.name = name == null || name.isBlank() ? this.role : name;
         this.token = token;
-        edit = role.equals("ADMIN") || role.equals("TPO") || role.equals("TPC");
-        query = role.equals("ADMIN") || role.equals("TPC");
-        admin = role.equals("ADMIN");
-        setTitle("Placement Eligibility Portal - " + role + " Dashboard");
+        edit = this.role.equals("ADMIN") || this.role.equals("TPO") || this.role.equals("TPC");
+        query = this.role.equals("ADMIN") || this.role.equals("TPC");
+        admin = this.role.equals("ADMIN");
+        setTitle("Placement Eligibility Portal - " + this.role + " Dashboard");
         setSize(1250, 760);
+        setMinimumSize(new Dimension(1050, 650));
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
         build();
@@ -43,8 +45,11 @@ public class FunctionalDashboard extends JFrame {
 
     private void build() {
         JPanel root = new JPanel(new BorderLayout());
+        root.setBackground(BG());
         root.add(side(), BorderLayout.WEST);
+
         JPanel main = new JPanel(new BorderLayout());
+        main.setBackground(BG());
         main.add(header(), BorderLayout.NORTH);
         content.setBackground(BG());
         content.add(dashboard(), "D");
@@ -53,8 +58,8 @@ public class FunctionalDashboard extends JFrame {
         content.add(notesPage(), "N");
         content.add(reportPage(), "R");
         if (admin) content.add(adminPage(), "A");
-        main.add(content);
-        root.add(main);
+        main.add(content, BorderLayout.CENTER);
+        root.add(main, BorderLayout.CENTER);
         setContentPane(root);
     }
 
@@ -62,7 +67,7 @@ public class FunctionalDashboard extends JFrame {
         JPanel p = new JPanel();
         p.setPreferredSize(new Dimension(220, 760));
         p.setBackground(DARK());
-        p.setBorder(BorderFactory.createEmptyBorder(28, 16, 18, 16));
+        p.setBorder(new EmptyBorder(28, 16, 18, 16));
         p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
         p.add(lbl("PLACEMENT", 23, true, Color.WHITE));
         p.add(lbl("ELIGIBILITY PORTAL", 11, false, new Color(220, 245, 225)));
@@ -87,15 +92,18 @@ public class FunctionalDashboard extends JFrame {
         b.setBackground(DARK());
         b.setBorderPainted(false);
         b.setFocusPainted(false);
-        if (card == null) b.addActionListener(e -> logout());
-        else b.addActionListener(e -> {
-            cards.show(content, card);
-            if (card.equals("J")) loadJobs();
-            if (card.equals("S")) loadStudents();
-            if (card.equals("N")) loadNotes();
-            if (card.equals("R")) loadStats();
-            if (card.equals("A")) loadFaculty();
-        });
+        b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        if (card == null) {
+            b.addActionListener(e -> logout());
+        } else {
+            b.addActionListener(e -> {
+                cards.show(content, card);
+                if (card.equals("J")) loadJobs();
+                if (card.equals("S")) loadStudents();
+                if (card.equals("N")) loadNotes();
+                if (card.equals("A")) loadFaculty();
+            });
+        }
         p.add(b);
         p.add(Box.createVerticalStrut(4));
     }
@@ -103,7 +111,7 @@ public class FunctionalDashboard extends JFrame {
     private JPanel header() {
         JPanel p = new JPanel(new BorderLayout());
         p.setBackground(Color.WHITE);
-        p.setBorder(BorderFactory.createEmptyBorder(18, 24, 18, 24));
+        p.setBorder(new EmptyBorder(18, 24, 18, 24));
         p.add(lbl(role + " Dashboard", 22, true, TEXT()), BorderLayout.WEST);
         p.add(lbl(name, 13, false, MUTED()), BorderLayout.EAST);
         return p;
@@ -111,31 +119,38 @@ public class FunctionalDashboard extends JFrame {
 
     private JPanel dashboard() {
         JPanel p = page();
-        JPanel body = new JPanel();
-        body.setOpaque(false);
-        body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
-        JLabel welcome = lbl("Welcome, " + name, 20, true, TEXT());
-        welcome.setAlignmentX(Component.LEFT_ALIGNMENT);
-        body.add(welcome);
-        body.add(Box.createVerticalStrut(24));
+        p.add(lbl("Welcome, " + name, 22, true, TEXT()), BorderLayout.NORTH);
+
+        JPanel center = new JPanel(new BorderLayout(0, 18));
+        center.setOpaque(false);
         stats = lbl("Loading live statistics...", 16, true, TEXT());
-        stats.setAlignmentX(Component.LEFT_ALIGNMENT);
-        body.add(stats);
-        body.add(Box.createVerticalStrut(28));
-        JLabel info = lbl("Use the navigation menu to manage jobs, students, notifications and reports.", 14, false, MUTED());
-        info.setAlignmentX(Component.LEFT_ALIGNMENT);
-        body.add(info);
-        body.add(Box.createVerticalStrut(12));
-        JLabel data = lbl("Live data is loaded from the placement portal database.", 13, false, MUTED());
-        data.setAlignmentX(Component.LEFT_ALIGNMENT);
-        body.add(data);
-        p.add(body, BorderLayout.NORTH);
+        center.add(stats, BorderLayout.NORTH);
+
+        JPanel info = new JPanel(new GridLayout(1, 2, 16, 0));
+        info.setOpaque(false);
+        info.add(card("Placement Overview", "Live data is loaded directly from the placement database."));
+        info.add(card("Quick Guide", edit
+                ? "Use Job Postings to manage drives and Students to review eligibility."
+                : "Use Job Postings and Students to view placement information."));
+        center.add(info, BorderLayout.CENTER);
+        p.add(center, BorderLayout.CENTER);
         return p;
+    }
+
+    private JPanel card(String title, String text) {
+        JPanel c = new JPanel(new BorderLayout(0, 8));
+        c.setBackground(Color.WHITE);
+        c.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(215, 222, 216)),
+                new EmptyBorder(18, 18, 18, 18)));
+        c.add(lbl(title, 16, true, DARK()), BorderLayout.NORTH);
+        c.add(lbl("<html><div style='width:360px'>" + text + "</div></html>", 13, false, MUTED()), BorderLayout.CENTER);
+        return c;
     }
 
     private JPanel jobsPage() {
         JPanel p = page();
-        JPanel top = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        JPanel top = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         top.setOpaque(false);
         JButton ref = btn("Refresh");
         ref.addActionListener(e -> loadJobs());
@@ -153,14 +168,14 @@ public class FunctionalDashboard extends JFrame {
         }
         p.add(top, BorderLayout.NORTH);
         style(jobsT);
-        p.add(new JScrollPane(jobsT));
+        p.add(new JScrollPane(jobsT), BorderLayout.CENTER);
         return p;
     }
 
     private JPanel studentsPage() {
         JPanel p = page();
         if (query) {
-            JPanel f = new JPanel(new FlowLayout(FlowLayout.LEFT));
+            JPanel f = new JPanel(new FlowLayout(FlowLayout.LEFT, 7, 0));
             f.setOpaque(false);
             search = new JTextField(12);
             dept = box("ALL", "CSE", "IT", "ECE", "MECH", "CIVIL");
@@ -176,8 +191,7 @@ public class FunctionalDashboard extends JFrame {
             f.add(new JLabel("Max Backlogs")); f.add(back);
             f.add(new JLabel("Semester")); f.add(sem);
             f.add(new JLabel("Sort")); f.add(sort);
-            JButton a = btn("Apply");
-            a.addActionListener(e -> loadStudents());
+            JButton a = btn("Apply"); a.addActionListener(e -> loadStudents());
             JButton c = btn("Clear");
             c.addActionListener(e -> {
                 search.setText(""); dept.setSelectedIndex(0); year.setSelectedIndex(0); cgpa.setSelectedIndex(0);
@@ -185,7 +199,9 @@ public class FunctionalDashboard extends JFrame {
             });
             f.add(a); f.add(c);
             p.add(f, BorderLayout.NORTH);
-        } else p.add(lbl("Student Roster (view only)", 18, true, TEXT()), BorderLayout.NORTH);
+        } else {
+            p.add(lbl("Student Roster (view only)", 18, true, TEXT()), BorderLayout.NORTH);
+        }
         style(studentsT);
         p.add(new JScrollPane(studentsT), BorderLayout.CENTER);
         return p;
@@ -203,44 +219,50 @@ public class FunctionalDashboard extends JFrame {
 
     private JPanel reportPage() {
         JPanel p = page();
-        JPanel body = new JPanel();
+        p.add(lbl("Reports", 20, true, TEXT()), BorderLayout.NORTH);
+        JPanel body = new JPanel(new BorderLayout(0, 12));
         body.setOpaque(false);
-        body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
-        JLabel title = lbl("Placement Report", 20, true, TEXT());
-        title.setAlignmentX(Component.LEFT_ALIGNMENT);
-        body.add(title);
-        body.add(Box.createVerticalStrut(20));
-        reportStats = lbl("Loading report...", 16, true, TEXT());
-        reportStats.setAlignmentX(Component.LEFT_ALIGNMENT);
-        body.add(reportStats);
-        body.add(Box.createVerticalStrut(18));
-        JLabel basic = lbl("Basic report: current jobs, eligible-student workload, notifications and total students are shown above.", 14, false, MUTED());
-        basic.setAlignmentX(Component.LEFT_ALIGNMENT);
-        body.add(basic);
-        body.add(Box.createVerticalStrut(10));
-        JLabel fallback = lbl("Advanced analytics: not configured yet. This section is reserved for future placement trends, charts and analytics.", 14, false, MUTED());
-        fallback.setAlignmentX(Component.LEFT_ALIGNMENT);
-        body.add(fallback);
-        JButton refresh = btn("Refresh Report");
-        refresh.setAlignmentX(Component.LEFT_ALIGNMENT);
-        refresh.addActionListener(e -> loadStats());
-        body.add(Box.createVerticalStrut(18));
-        body.add(refresh);
-        p.add(body, BorderLayout.NORTH);
+        body.add(lbl("Basic Placement Report", 16, true, DARK()), BorderLayout.NORTH);
+        JTextArea report = new JTextArea();
+        report.setEditable(false);
+        report.setFont(new Font("SansSerif", Font.PLAIN, 14));
+        report.setLineWrap(true);
+        report.setWrapStyleWord(true);
+        report.setBackground(Color.WHITE);
+        report.setBorder(new EmptyBorder(16, 16, 16, 16));
+        report.setText("Loading report...");
+        body.add(report, BorderLayout.CENTER);
+        JLabel fallback = lbl("Advanced analytics: planned for a future version. Basic live totals are shown here for now.", 12, false, MUTED());
+        body.add(fallback, BorderLayout.SOUTH);
+        p.add(body, BorderLayout.CENTER);
+
+        try {
+            SocketClient.Response r = client.sendRequest("GET_DASHBOARD_STATS", token);
+            if (r.success) {
+                String[] x = r.parts();
+                if (x.length >= 4) {
+                    report.setText("Jobs currently available: " + x[0] + "\n"
+                            + "Pending eligible student records: " + x[1] + "\n"
+                            + "Notifications sent: " + x[2] + "\n"
+                            + "Registered students: " + x[3] + "\n\n"
+                            + "This is the basic operational report. Advanced charts and historical analytics can be added later without changing the current workflow.");
+                }
+            }
+        } catch (Exception ignored) {
+            report.setText("Live report data is temporarily unavailable.\n\nAdvanced analytics are planned for a future version.");
+        }
         return p;
     }
 
     private JPanel adminPage() {
         JPanel p = page();
-        JPanel top = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        JPanel top = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         top.setOpaque(false);
         JButton add = btn("Add User");
         add.addActionListener(e -> addFaculty());
-        JButton student = btn("Add Student");
-        student.addActionListener(e -> addStudent());
         JButton ref = btn("Refresh");
         ref.addActionListener(e -> loadFaculty());
-        top.add(add); top.add(student); top.add(ref);
+        top.add(add); top.add(ref);
         p.add(top, BorderLayout.NORTH);
         style(facultyT);
         p.add(new JScrollPane(facultyT), BorderLayout.CENTER);
@@ -248,8 +270,7 @@ public class FunctionalDashboard extends JFrame {
     }
 
     private void refresh() {
-        loadStats(); loadJobs(); loadStudents(); loadNotes();
-        if (admin) loadFaculty();
+        loadStats(); loadJobs(); loadStudents(); loadNotes(); if (admin) loadFaculty();
     }
 
     private void loadStats() {
@@ -257,15 +278,9 @@ public class FunctionalDashboard extends JFrame {
             SocketClient.Response r = client.sendRequest("GET_DASHBOARD_STATS", token);
             if (r.success) {
                 String[] x = r.parts();
-                String value = "Active Jobs: " + x[0] + "    Pending Eligible: " + x[1] + "    Notifications: " + x[2] + "    Students: " + x[3];
-                stats.setText(value);
-                if (reportStats != null) reportStats.setText(value);
+                if (x.length >= 4) stats.setText("Active Jobs: " + x[0] + "    |    Pending Eligible: " + x[1] + "    |    Notifications: " + x[2] + "    |    Students: " + x[3]);
             }
-        } catch (Exception e) {
-            String fallback = "Live statistics are temporarily unavailable.";
-            if (stats != null) stats.setText(fallback);
-            if (reportStats != null) reportStats.setText(fallback);
-        }
+        } catch (Exception e) { stats.setText("Live statistics are temporarily unavailable."); }
     }
 
     private void loadJobs() {
@@ -276,9 +291,8 @@ public class FunctionalDashboard extends JFrame {
             for (String l : r.lines) {
                 String[] x = l.split("\\|", -1);
                 if (x.length >= 10) {
-                    // Protocol: ID, Company, Role, Package, Min CGPA, Branches, Backlogs, Year, Skills, Deadline.
-                    // The dashboard intentionally hides Skills and displays the real Deadline in the last column.
-                    jobs.addRow(new Object[]{x[0], x[1], x[2], x[3], x[4], x[5], x[6], x[7], formatDeadline(x[9])});
+                    // Protocol: ID, Company, Role, Package, CGPA, Branches, Backlogs, Year, Skills, Deadline.
+                    jobs.addRow(new Object[]{x[0].isBlank() ? "-" : x[0], x[1], x[2], x[3], x[4], x[5], x[6], x[7], formatDeadline(x[9])});
                 }
             }
         } catch (Exception ignored) {}
@@ -293,19 +307,13 @@ public class FunctionalDashboard extends JFrame {
                 String d = (String) dept.getSelectedItem();
                 int y = num(year), m = num(back), s = num(sem);
                 double c = decimal(cgpa, -1);
-                String so = (String) sort.getSelectedItem();
-                String[] z = so.split(" ");
+                String so = (String) sort.getSelectedItem(); String[] z = so.split(" ");
                 boolean asc = z.length > 1 && z[1].equals("ASC");
                 r = client.sendListRequest("SEARCH_SORT_FILTER_STUDENTS", token, q, d, String.valueOf(y), String.valueOf(c), String.valueOf(m), String.valueOf(s), z[0], String.valueOf(asc));
             } else r = client.sendListRequest("GET_STUDENTS", token);
             if (!r.success) throw new Exception(r.errorMessage);
-            for (String l : r.lines) {
-                String[] x = l.split("\\|", -1);
-                if (x.length >= 10) students.addRow(x);
-            }
-        } catch (Exception e) {
-            JOptionPane.showMessageDialog(this, "Unable to load students: " + e.getMessage(), "Server error", JOptionPane.ERROR_MESSAGE);
-        }
+            for (String l : r.lines) { String[] x = l.split("\\|", -1); if (x.length >= 10) students.addRow(x); }
+        } catch (Exception e) { JOptionPane.showMessageDialog(this, "Unable to load students: " + e.getMessage(), "Server error", JOptionPane.ERROR_MESSAGE); }
     }
 
     private void loadNotes() {
@@ -313,10 +321,7 @@ public class FunctionalDashboard extends JFrame {
         try {
             SocketClient.ListResponse r = client.sendListRequest("GET_NOTIFICATIONS", token);
             if (!r.success) return;
-            for (String l : r.lines) {
-                String[] x = l.split("\\|", -1);
-                if (x.length >= 7) notes.addRow(x);
-            }
+            for (String l : r.lines) { String[] x = l.split("\\|", -1); if (x.length >= 7) notes.addRow(x); }
         } catch (Exception ignored) {}
     }
 
@@ -328,7 +333,7 @@ public class FunctionalDashboard extends JFrame {
             for (String l : r.lines) {
                 String[] x = l.split("\\|", -1);
                 if (x.length >= 6 && !"FACULTY".equalsIgnoreCase(x[3])) {
-                    if (x[4] == null || x[4].isBlank()) x[4] = "No Department";
+                    if (x[4].isBlank()) x[4] = "No Department";
                     faculty.addRow(x);
                 }
             }
@@ -337,91 +342,90 @@ public class FunctionalDashboard extends JFrame {
 
     private void addJob() {
         JTextField c = new JTextField(), ro = new JTextField(), pack = new JTextField(), cg = new JTextField("7"), br = new JTextField("CSE,IT"), ma = new JTextField("0"), dl = new JTextField("2026-12-31");
-        JPanel p = new JPanel(new GridLayout(0, 2));
-        add(p, "Company", c); add(p, "Role", ro); add(p, "Package", pack); add(p, "Min CGPA", cg); add(p, "Branches", br); add(p, "Max Backlogs", ma); add(p, "Deadline", dl);
+        JPanel p = new JPanel(new GridLayout(0, 2, 8, 8)); add(p, "Company", c); add(p, "Role", ro); add(p, "Package", pack); add(p, "Min CGPA", cg); add(p, "Branches", br); add(p, "Max Backlogs", ma); add(p, "Deadline", dl);
         if (JOptionPane.showConfirmDialog(this, p, "Add Job", JOptionPane.OK_CANCEL_OPTION) != JOptionPane.OK_OPTION) return;
         try {
             SocketClient.Response r = client.sendRequest("ADD_JOB", token, c.getText(), ro.getText(), pack.getText(), cg.getText(), br.getText(), ma.getText(), dl.getText());
-            if (!r.success) throw new Exception(r.payload);
-            loadJobs(); loadStats();
+            if (!r.success) throw new Exception(r.payload); loadJobs(); loadStats();
         } catch (Exception e) { JOptionPane.showMessageDialog(this, e.getMessage()); }
     }
 
     private void eligible() {
         int row = jobsT.getSelectedRow();
-        if (row < 0) { JOptionPane.showMessageDialog(this, "Select a job first."); return; }
+        if (row < 0) { JOptionPane.showMessageDialog(this, "Select a job first.", "Eligible Students", JOptionPane.WARNING_MESSAGE); return; }
+        int modelRow = jobsT.convertRowIndexToModel(row);
+        String jobId = String.valueOf(jobs.getValueAt(modelRow, 0));
         try {
-            SocketClient.ListResponse r = client.sendListRequest("GET_ELIGIBLE_STUDENTS", token, String.valueOf(jobsT.getValueAt(row, 0)));
+            SocketClient.ListResponse r = client.sendListRequest("GET_ELIGIBLE_STUDENTS", token, jobId);
             if (!r.success) throw new Exception(r.errorMessage);
-            JTextArea a = new JTextArea(String.join("\n", r.lines)); a.setEditable(false);
-            JOptionPane.showMessageDialog(this, new JScrollPane(a), "Eligible Students", JOptionPane.INFORMATION_MESSAGE);
-        } catch (Exception e) { JOptionPane.showMessageDialog(this, e.getMessage()); }
+
+            DefaultTableModel m = model(new String[]{"PRN", "Name", "Email", "Department", "CGPA", "Year", "Backlogs", "Semester", "Phone", "Skills"});
+            for (String line : r.lines) { String[] x = line.split("\\|", -1); if (x.length >= 10) m.addRow(x); }
+            JTable table = new JTable(m);
+            style(table);
+            table.setAutoCreateRowSorter(true);
+            table.setPreferredScrollableViewportSize(new Dimension(1000, Math.min(360, Math.max(120, table.getRowCount() * 28 + 35))));
+
+            JPanel panel = new JPanel(new BorderLayout(0, 10));
+            panel.setBorder(new EmptyBorder(8, 8, 8, 8));
+            panel.add(lbl("Eligible Students — " + jobId, 16, true, DARK()), BorderLayout.NORTH);
+            panel.add(new JScrollPane(table), BorderLayout.CENTER);
+            panel.add(lbl(table.getRowCount() + " eligible student(s) found", 12, false, MUTED()), BorderLayout.SOUTH);
+            JOptionPane.showMessageDialog(this, panel, "Eligible Students", JOptionPane.INFORMATION_MESSAGE);
+        } catch (Exception e) { JOptionPane.showMessageDialog(this, e.getMessage(), "Eligible Students", JOptionPane.ERROR_MESSAGE); }
     }
 
     private void notifyAllStudents() {
-        JTextField s = new JTextField(), m = new JTextField();
-        JPanel p = new JPanel(new GridLayout(0, 2)); add(p, "Subject", s); add(p, "Message", m);
+        JTextField s = new JTextField(), m = new JTextField(); JPanel p = new JPanel(new GridLayout(0, 2, 8, 8)); add(p, "Subject", s); add(p, "Message", m);
         if (JOptionPane.showConfirmDialog(this, p, "Send Notification", JOptionPane.OK_CANCEL_OPTION) != JOptionPane.OK_OPTION) return;
-        try {
-            SocketClient.Response r = client.sendRequest("SEND_GENERAL_NOTIFICATION", token, s.getText(), m.getText(), "ALL");
-            if (!r.success) throw new Exception(r.payload); loadNotes(); loadStats();
-        } catch (Exception e) { JOptionPane.showMessageDialog(this, e.getMessage()); }
+        try { SocketClient.Response r = client.sendRequest("SEND_GENERAL_NOTIFICATION", token, s.getText(), m.getText(), "ALL"); if (!r.success) throw new Exception(r.payload); loadNotes(); loadStats(); }
+        catch (Exception e) { JOptionPane.showMessageDialog(this, e.getMessage()); }
     }
 
     private void addFaculty() {
         JTextField n = new JTextField(), e = new JTextField(), p = new JTextField("pass123"), d = new JTextField(), ph = new JTextField();
         JComboBox<String> ro = box("TPO", "TPC", "DIRECTOR", "DEAN", "ADMIN");
-        JPanel x = new JPanel(new GridLayout(0, 2)); add(x, "Name", n); add(x, "Email", e); add(x, "Password", p); x.add(new JLabel("Role")); x.add(ro); add(x, "Department", d); add(x, "Phone", ph);
+        JPanel x = new JPanel(new GridLayout(0, 2, 8, 8)); add(x, "Name", n); add(x, "Email", e); add(x, "Password", p); x.add(new JLabel("Role")); x.add(ro); add(x, "Department", d); add(x, "Phone", ph);
         if (JOptionPane.showConfirmDialog(this, x, "Add User", JOptionPane.OK_CANCEL_OPTION) != JOptionPane.OK_OPTION) return;
         try {
-            SocketClient.Response r = client.sendRequest("ADD_FACULTY", token, n.getText(), e.getText(), p.getText(), (String) ro.getSelectedItem(), d.getText(), ph.getText());
-            if (!r.success) throw new Exception(r.payload); loadFaculty();
-        } catch (Exception z) { JOptionPane.showMessageDialog(this, z.getMessage()); }
-    }
-
-    private void addStudent() {
-        JTextField prn = new JTextField(), n = new JTextField(), e = new JTextField(), p = new JTextField("pass1234");
-        JComboBox<String> d = box("CSE", "IT", "ECE", "MECH", "CIVIL");
-        JTextField cg = new JTextField("7.5"), py = new JTextField("2027"), bl = new JTextField("0"), sem = new JTextField("5"), ph = new JTextField(), skills = new JTextField();
-        JPanel x = new JPanel(new GridLayout(0, 2));
-        add(x, "PRN", prn); add(x, "Name", n); add(x, "Email", e); add(x, "Password", p); x.add(new JLabel("Department")); x.add(d);
-        add(x, "CGPA", cg); add(x, "Passing Year", py); add(x, "Backlogs", bl); add(x, "Semester", sem); add(x, "Phone", ph); add(x, "Skills", skills);
-        if (JOptionPane.showConfirmDialog(this, x, "Add Student", JOptionPane.OK_CANCEL_OPTION) != JOptionPane.OK_OPTION) return;
-        try {
-            SocketClient.Response r = client.sendRequest("ADD_STUDENT", token, prn.getText(), n.getText(), e.getText(), p.getText(), (String) d.getSelectedItem(), cg.getText(), py.getText(), bl.getText(), sem.getText(), ph.getText(), skills.getText());
+            SocketClient.Response r = client.sendRequest("ADD_FACULTY", token, n.getText().trim(), e.getText().trim(), p.getText(), (String) ro.getSelectedItem(), d.getText().trim(), ph.getText().trim());
             if (!r.success) throw new Exception(r.payload);
-            loadStudents(); loadStats(); JOptionPane.showMessageDialog(this, "Student added successfully.");
-        } catch (Exception z) { JOptionPane.showMessageDialog(this, z.getMessage()); }
+            loadFaculty();
+            JOptionPane.showMessageDialog(this, "User added successfully.\nThey can now log in using the selected role and password.", "User Added", JOptionPane.INFORMATION_MESSAGE);
+        } catch (Exception z) { JOptionPane.showMessageDialog(this, z.getMessage(), "Add User", JOptionPane.ERROR_MESSAGE); }
     }
 
-    private void logout() { try { client.sendRequest("LOGOUT", token); } catch (Exception ignored) {} dispose(); new LoginFrame().setVisible(true); }
+    private void logout() { try { if (token != null) client.sendRequest("LOGOUT", token); } catch (Exception ignored) {} dispose(); new LoginFrame().setVisible(true); }
 
-    private static String formatDeadline(String raw) {
-        if (raw == null || raw.isBlank()) return "Not specified";
+    private static String formatDeadline(String value) {
+        if (value == null || value.isBlank()) return "-";
         try {
-            LocalDate d = LocalDate.parse(raw, DATE), today = LocalDate.now();
-            long days = ChronoUnit.DAYS.between(today, d);
+            LocalDate d = LocalDate.parse(value.length() >= 10 ? value.substring(0, 10) : value);
+            long days = ChronoUnit.DAYS.between(LocalDate.now(), d);
             if (days == 0) return "Due today";
             if (days == 1) return "1 day left";
             if (days > 1) return days + " days left";
-            if (days == -1) return "Expired 1 day ago";
-            return "Expired " + Math.abs(days) + " days ago";
-        } catch (Exception e) { return raw; }
+            long late = Math.abs(days);
+            return late == 1 ? "Expired 1 day ago" : "Expired " + late + " days ago";
+        } catch (Exception e) { return value; }
     }
 
-    private static JPanel page() { JPanel p = new JPanel(new BorderLayout(0, 10)); p.setBackground(BG()); p.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20)); return p; }
+    private static JPanel page() { JPanel p = new JPanel(new BorderLayout(0, 12)); p.setBackground(BG()); p.setBorder(new EmptyBorder(20, 20, 20, 20)); return p; }
     private static Color BG() { return new Color(247, 248, 245); }
     private static Color DARK() { return new Color(20, 92, 48); }
     private static Color TEXT() { return new Color(38, 50, 43); }
     private static Color MUTED() { return new Color(105, 115, 108); }
     private static JLabel lbl(String s, int z, boolean b, Color c) { JLabel l = new JLabel(s); l.setFont(new Font("SansSerif", b ? Font.BOLD : Font.PLAIN, z)); l.setForeground(c); return l; }
-    private static JButton btn(String s) { JButton b = new JButton(s); b.setFocusPainted(false); return b; }
+    private static JButton btn(String s) { JButton b = new JButton(s); b.setFocusPainted(false); b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)); return b; }
     private static DefaultTableModel model(String[] c) { return new DefaultTableModel(c, 0) { public boolean isCellEditable(int r, int c) { return false; } }; }
     private static void style(JTable t) {
-        t.setRowHeight(28); t.setAutoCreateRowSorter(true); t.setFillsViewportHeight(true);
+        t.setRowHeight(30); t.setAutoCreateRowSorter(true); t.setFillsViewportHeight(true); t.setShowGrid(true);
+        t.setGridColor(new Color(205, 212, 207)); t.setIntercellSpacing(new Dimension(1, 1));
+        t.setSelectionBackground(new Color(205, 224, 211)); t.setSelectionForeground(TEXT());
         DefaultTableCellRenderer center = new DefaultTableCellRenderer(); center.setHorizontalAlignment(SwingConstants.CENTER);
         t.setDefaultRenderer(Object.class, center);
-        t.getTableHeader().setDefaultRenderer(center);
+        JTableHeader h = t.getTableHeader(); h.setReorderingAllowed(false); h.setPreferredSize(new Dimension(h.getPreferredSize().width, 32));
+        h.setDefaultRenderer(new DefaultTableCellRenderer() {{ setHorizontalAlignment(SwingConstants.CENTER); setOpaque(true); setBackground(new Color(232, 238, 234)); setForeground(TEXT()); setBorder(BorderFactory.createMatteBorder(0, 0, 1, 1, new Color(170, 180, 173))); }});
     }
     private static JComboBox<String> box(String... x) { return new JComboBox<>(x); }
     private static int num(JComboBox<String> b) { String x = (String) b.getSelectedItem(); return x == null || x.equals("ALL") ? 0 : Integer.parseInt(x); }

@@ -23,7 +23,7 @@ public class AuthService {
             }
             if (!(normalized.equals("ADMIN") || normalized.equals("TPO") || normalized.equals("TPC") || normalized.equals("DIRECTOR") || normalized.equals("DEAN")))
                 return new LoginResult(false,"Unsupported role.",null);
-            Faculty f = facultyDAO.findByEmailAndRole(email,normalized);
+            Faculty f = facultyDAO.findByEmailAndRole(email.trim(),normalized);
             if (f == null) return new LoginResult(false,"No "+normalized+" account found for this email.",null);
             if (!PasswordHasher.verifyPassword(password,f.getPassword())) return new LoginResult(false,"Incorrect password.",null);
             return new LoginResult(true,"Login successful.",f.getName(),f.getFacultyId(),normalized);

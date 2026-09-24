@@ -7,11 +7,19 @@ import java.util.List;
 
 public class FacultyDAO {
     public Faculty findByEmailAndRole(String email,String role)throws SQLException{
-        String sql="SELECT faculty_id,name,email,password,role,department,phone FROM faculty WHERE LOWER(email)=LOWER(?) AND UPPER(role)=UPPER(?) AND is_active=TRUE";
+        String sql="SELECT faculty_id,name,email,password,role,department,phone FROM faculty WHERE LOWER(TRIM(email))=LOWER(TRIM(?)) AND UPPER(TRIM(role))=UPPER(TRIM(?)) AND is_active=TRUE";
         try(Connection c=DatabaseConnection.getConnection();PreparedStatement ps=c.prepareStatement(sql)){
-            ps.setString(1,email);ps.setString(2,role);try(ResultSet rs=ps.executeQuery()){return rs.next()?map(rs):null;}
+            ps.setString(1,email==null?"":email.trim());ps.setString(2,role==null?"":role.trim());try(ResultSet rs=ps.executeQuery()){return rs.next()?map(rs):null;}
         }
     }
+    public Faculty findByEmail(String email)throws SQLException{
+        String sql="SELECT faculty_id,name,email,password,role,department,phone FROM faculty WHERE LOWER(TRIM(email))=LOWER(TRIM(?)) LIMIT 1";
+        try(Connection c=DatabaseConnection.getConnection();PreparedStatement ps=c.prepareStatement(sql)){
+            ps.setString(1,email==null?"":email.trim());
+            try(ResultSet rs=ps.executeQuery()){return rs.next()?map(rs):null;}
+        }
+    }
+
     public List<Faculty> findAll()throws SQLException{
         try(Connection c=DatabaseConnection.getConnection();PreparedStatement ps=c.prepareStatement("SELECT faculty_id,name,email,password,role,department,phone FROM faculty WHERE is_active=TRUE ORDER BY role,name");ResultSet rs=ps.executeQuery()){
             List<Faculty> list=new ArrayList<>();while(rs.next())list.add(map(rs));return list;
