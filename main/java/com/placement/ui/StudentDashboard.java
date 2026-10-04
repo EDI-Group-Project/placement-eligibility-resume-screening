@@ -1,1033 +1,737 @@
 package com.placement.ui;
 
-import java.awt.BorderLayout;
-import java.awt.CardLayout;
-import java.awt.Color;
-import java.awt.Component;
-import java.awt.Cursor;
-import java.awt.Dimension;
-import java.awt.FlowLayout;
-import java.awt.Font;
-import java.awt.FontMetrics;
-import java.awt.Graphics;
-import java.awt.Graphics2D;
-import java.awt.GridLayout;
-import java.awt.Insets;
-import java.awt.RenderingHints;
-import java.awt.event.ActionListener;
-import java.util.ArrayList;
-import java.util.List;
-
-import javax.swing.BorderFactory;
-import javax.swing.Box;
-import javax.swing.BoxLayout;
-import javax.swing.JButton;
-import javax.swing.JCheckBox;
-import javax.swing.JComboBox;
-import javax.swing.JFrame;
-import javax.swing.JLabel;
-import javax.swing.JOptionPane;
-import javax.swing.JPanel;
-import javax.swing.JScrollPane;
-import javax.swing.JSeparator;
-import javax.swing.JTable;
-import javax.swing.JTextField;
-import javax.swing.SwingConstants;
-import javax.swing.SwingUtilities;
-import javax.swing.border.Border;
+import com.placement.sockets.SocketClient;
+import javax.swing.*;
 import javax.swing.border.EmptyBorder;
+import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
+import javax.swing.table.JTableHeader;
+import java.awt.*;
+import java.io.File;
+import java.nio.file.Files;
+import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
+import java.util.*;
+import java.util.List;
 
 /**
- * Student Dashboard - Placement Eligibility Portal
+ * Student Dashboard.
  *
- * Frontend-only implementation, intentionally coordinated with the existing
- * TPO/TPC dashboards:
- * - 1280 x 760 fixed window
- * - same green / off-white theme
- * - same sidebar proportions and typography
- * - CardLayout based navigation
+ * Commands already supported by the server today: GET_JOBS, APPLY_JOB,
+ * GET_MY_APPLICATIONS, GET_NOTIFICATIONS, LOGOUT.
  *
- * Student-specific resume/application actions are kept UI-local because the
- * supplied project did not include a completed student socket protocol for them.
+ * Commands this screen also calls that the backend does not implement yet
+ * (tracked separately with the backend team): GET_MY_PROFILE, UPDATE_MY_PROFILE,
+ * WITHDRAW_APPLICATION, UPLOAD_RESUME, GET_RESUME. Every call to one of these
+ * degrades gracefully — on "FAILED"/"Unknown command" the affected feature
+ * falls back to its pre-backend behaviour (e.g. the jobs list simply stays
+ * unfiltered) instead of breaking the screen. Once the backend adds a given
+ * command, the matching feature activates with no further frontend changes.
+ *
+ * Proposed wire formats for the new commands (for the backend team):
+ *   GET_MY_PROFILE    req: token
+ *                     res: SUCCESS|prn|name|email|department|cgpa|passingYear|backlogs|semester|phone|skills
+ *   UPDATE_MY_PROFILE req: token, phone, skills
+ *                     res: SUCCESS|Updated. / FAILED|reason
+ *   WITHDRAW_APPLICATION req: token, jobId
+ *                     res: SUCCESS|Withdrawn. / FAILED|reason
+ *   UPLOAD_RESUME     req: token, filename, base64Content
+ *                     res: SUCCESS|Uploaded. / FAILED|reason
+ *   GET_RESUME        req: token
+ *                     res: SUCCESS|filename|base64Content / FAILED|No resume uploaded.
  */
 public class StudentDashboard extends JFrame {
 
-    // ================= THEME (matches TPO/TPC) =================
-    private static final Color PRIMARY_GREEN = new Color(27, 117, 61);
-    private static final Color DARK_GREEN = new Color(20, 92, 48);
-    private static final Color BG = new Color(247, 248, 245);
-    private static final Color LIGHT_GREEN = new Color(232, 245, 236);
-    private static final Color TEXT = new Color(38, 50, 43);
-    private static final Color MUTED = new Color(105, 115, 108);
-    private static final Color BORDER = new Color(214, 220, 215);
-    private static final Color SUCCESS = new Color(31, 119, 65);
-    private static final Color WARNING = new Color(154, 104, 18);
-    private static final Color DANGER = new Color(168, 55, 55);
+    private final String name, email, token;
+    private final SocketClient client = new SocketClient();
+    private final CardLayout cards = new CardLayout();
+    private final JPanel content = new JPanel(cards);
 
-    private static final Font FONT_HEADING = new Font("SansSerif", Font.BOLD, 24);
-    private static final Font FONT_SECTION = new Font("SansSerif", Font.BOLD, 15);
-    private static final Font FONT_LABEL = new Font("SansSerif", Font.BOLD, 12);
-    private static final Font FONT_BODY = new Font("SansSerif", Font.PLAIN, 13);
+    // --- The student's own profile, fetched via GET_MY_PROFILE. -----------
+    // Used for the Profile tab and for client-side eligibility filtering in
+    // Placement Drives. Until the backend ships GET_MY_PROFILE this stays
+    // unloaded and every feature that depends on it falls back gracefully.
+    private boolean profileLoaded = false;
+    private String profilePrn = "", profileDept = "", profileSkills = "", profilePhone = "";
+    private double profileCgpa = -1;
+    private int profilePassingYear = -1, profileBacklogs = -1, profileSemester = -1;
 
-    private final String studentName;
-    private final String prn;
+    // Raw rows from the last GET_JOBS call (unfiltered), re-used so changing
+    // a search/filter/sort control never needs a fresh server round trip.
+    private final List<String[]> allJobs = new ArrayList<>();
 
-    private final CardLayout cardLayout = new CardLayout();
-    private final JPanel contentPanel = new JPanel(cardLayout);
+    // Notification read state. Client-side only for now (no backend
+    // persistence exists yet) — resets whenever the app restarts.
+    private final Set<String> readNotifications = new HashSet<>();
 
-    private SolidMenuButton dashboardButton;
-    private SolidMenuButton drivesButton;
-    private SolidMenuButton applicationsButton;
-    private SolidMenuButton notificationsButton;
-    private SolidMenuButton resumeButton;
-    private SolidMenuButton profileButton;
-    private SolidMenuButton statusButton;
-    private SolidMenuButton selectedButton;
+    private final DefaultTableModel jobs = model(new String[]{
+            "Job ID", "Company", "Role", "Package", "Min CGPA", "Branches", "Backlogs", "Year", "Required Skills", "Deadline"});
+    private final DefaultTableModel apps = model(new String[]{
+            "Job ID", "Company", "Role", "Status", "Score", "Applied At"});
+    private final DefaultTableModel notes = model(new String[]{
+            "Status", "ID", "Job ID", "Subject", "Message", "Recipients", "Created"});
 
-    // Dashboard values / labels that can later be bound to server data
-    private JLabel eligibleValue;
-    private JLabel appliedValue;
-    private JLabel shortlistedValue;
-    private JLabel deadlineValue;
+    private final JTable jobsT = new JTable(jobs), appsT = new JTable(apps), notesT = new JTable(notes);
 
-    private final List<Drive> drives = new ArrayList<>();
-    private final List<Application> applications = new ArrayList<>();
-    private final List<Notice> notices = new ArrayList<>();
+    private JTextField search;
+    private JComboBox<String> branchFilter, sortBox;
+    private JLabel statOpen, statApplied, statSelected;
 
-    public StudentDashboard(String studentName, String prn) {
-        this.studentName = (studentName == null || studentName.isBlank()) ? "Student" : studentName;
-        this.prn = (prn == null || prn.isBlank()) ? "PRN000" : prn;
+    private JTextField prnField, nameField, emailField, deptField, cgpaField, yearField, backlogsField, semField;
+    private JTextField phoneField, skillsField;
+    private JLabel resumeStatus;
+    private String resumeFileName = null;
 
+    public StudentDashboard(String name, String email, String token) {
+        this.name = name == null || name.isBlank() ? "Student" : name;
+        this.email = email;
+        this.token = token;
         setTitle("Placement Eligibility Portal - Student Dashboard");
-        setSize(1280, 760);
+        setSize(1250, 760);
+        setMinimumSize(new Dimension(1050, 650));
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
-        setResizable(false);
-
-        loadMockData();
-        initUI();
+        build();
+        refresh();
     }
 
-    // Convenience constructor for standalone testing.
-    public StudentDashboard() {
-        this("Gayatri Dethe", "B24CE1021");
-    }
+    public StudentDashboard(String name, String email) { this(name, email, null); }
+    public StudentDashboard() { this("Student", "", null); }
 
-    private void initUI() {
+    // =========================================================
+    // LAYOUT
+    // =========================================================
+
+    private void build() {
+        JPanel root = new JPanel(new BorderLayout());
+        root.setBackground(BG());
+        root.add(side(), BorderLayout.WEST);
+
         JPanel main = new JPanel(new BorderLayout());
-        main.add(buildSidebar(), BorderLayout.WEST);
-
-        contentPanel.setBackground(BG);
-        contentPanel.add(buildDashboardPage(), "DASHBOARD");
-        contentPanel.add(buildDrivesPage(), "DRIVES");
-        contentPanel.add(buildApplicationsPage(), "APPLICATIONS");
-        contentPanel.add(buildNotificationsPage(), "NOTIFICATIONS");
-        contentPanel.add(buildResumePage(), "RESUME");
-        contentPanel.add(buildProfilePage(), "PROFILE");
-        contentPanel.add(buildStatusPage(), "STATUS");
-
-        main.add(buildMainArea(), BorderLayout.CENTER);
-        add(main);
-
-        showPage("DASHBOARD", dashboardButton, "Student Dashboard");
+        main.setBackground(BG());
+        main.add(header(), BorderLayout.NORTH);
+        content.setBackground(BG());
+        content.add(dashboard(), "D");
+        content.add(jobsPage(), "J");
+        content.add(appsPage(), "A");
+        content.add(notesPage(), "N");
+        content.add(profilePage(), "P");
+        main.add(content, BorderLayout.CENTER);
+        root.add(main, BorderLayout.CENTER);
+        setContentPane(root);
     }
 
-    // ================= SIDEBAR =================
-
-    private JPanel buildSidebar() {
-        JPanel sidebar = new JPanel();
-        sidebar.setPreferredSize(new Dimension(245, 760));
-        sidebar.setBackground(DARK_GREEN);
-        sidebar.setBorder(new EmptyBorder(30, 18, 20, 18));
-        sidebar.setLayout(new BoxLayout(sidebar, BoxLayout.Y_AXIS));
-
-        JLabel logo = new JLabel("PLACEMENT");
-        logo.setFont(new Font("SansSerif", Font.BOLD, 23));
-        logo.setForeground(Color.WHITE);
-        logo.setAlignmentX(Component.LEFT_ALIGNMENT);
-        sidebar.add(logo);
-
-        JLabel portal = new JLabel("ELIGIBILITY PORTAL");
-        portal.setFont(new Font("SansSerif", Font.BOLD, 11));
-        portal.setForeground(new Color(220, 245, 225));
-        portal.setAlignmentX(Component.LEFT_ALIGNMENT);
-        sidebar.add(portal);
-        sidebar.add(Box.createVerticalStrut(35));
-
-        dashboardButton = menu(sidebar, "Dashboard", e -> showPage("DASHBOARD", dashboardButton, "Student Dashboard"));
-        drivesButton = menu(sidebar, "Placement Drives", e -> showPage("DRIVES", drivesButton, "Placement Drives"));
-        applicationsButton = menu(sidebar, "My Applications", e -> showPage("APPLICATIONS", applicationsButton, "My Applications"));
-        notificationsButton = menu(sidebar, "Notifications", e -> showPage("NOTIFICATIONS", notificationsButton, "Notifications"));
-        resumeButton = menu(sidebar, "My Resume", e -> showPage("RESUME", resumeButton, "My Resume"));
-        profileButton = menu(sidebar, "My Profile", e -> showPage("PROFILE", profileButton, "My Profile"));
-        statusButton = menu(sidebar, "Placement Status", e -> showPage("STATUS", statusButton, "Placement Status"));
-
-        sidebar.add(Box.createVerticalGlue());
-
-        JSeparator separator = new JSeparator();
-        separator.setForeground(new Color(78, 135, 91));
-        separator.setAlignmentX(Component.LEFT_ALIGNMENT);
-        sidebar.add(separator);
-        sidebar.add(Box.createVerticalStrut(15));
-
-        JLabel user = new JLabel("<html><b>STUDENT</b><br>" + escapeHtml(studentName)
-                + "<br>" + escapeHtml(prn) + "</html>");
-        user.setForeground(Color.WHITE);
-        user.setFont(new Font("SansSerif", Font.PLAIN, 12));
-        user.setAlignmentX(Component.LEFT_ALIGNMENT);
-        sidebar.add(user);
-        sidebar.add(Box.createVerticalStrut(15));
-
-        SolidMenuButton logout = new SolidMenuButton("Logout");
-        logout.setPreferredSize(new Dimension(209, 38));
-        logout.setMinimumSize(new Dimension(209, 38));
-        logout.setMaximumSize(new Dimension(209, 38));
-        logout.setAlignmentX(Component.LEFT_ALIGNMENT);
-        logout.setHorizontalAlignment(SwingConstants.LEFT);
-        logout.setBorderColor(new Color(100, 175, 120));
-        logout.addActionListener(e -> handleLogout());
-        sidebar.add(logout);
-
-        return sidebar;
-    }
-
-    private SolidMenuButton menu(JPanel sidebar, String text, ActionListener action) {
-        SolidMenuButton button = new SolidMenuButton(text);
-        button.setPreferredSize(new Dimension(209, 43));
-        button.setMinimumSize(new Dimension(209, 43));
-        button.setMaximumSize(new Dimension(209, 43));
-        button.setAlignmentX(Component.LEFT_ALIGNMENT);
-        button.addActionListener(e -> action.actionPerformed(e));
-        sidebar.add(button);
-        sidebar.add(Box.createVerticalStrut(4));
-        return button;
-    }
-
-    private void handleLogout() {
-        int choice = JOptionPane.showConfirmDialog(
-                this,
-                "Are you sure you want to logout?",
-                "Logout",
-                JOptionPane.YES_NO_OPTION
-        );
-        if (choice == JOptionPane.YES_OPTION) {
-            dispose();
-            // Login screen can be reopened by the application controller.
-            // Keep this dashboard independent from the login implementation.
-        }
-    }
-
-    private static class SolidMenuButton extends JButton {
-        private boolean selectedVisual;
-        private Color borderColor = DARK_GREEN;
-
-        SolidMenuButton(String text) {
-            super(text);
-            setFont(new Font("SansSerif", Font.BOLD, 12));
-            setForeground(Color.WHITE);
-            setBackground(DARK_GREEN);
-            setFocusPainted(false);
-            setBorderPainted(false);
-            setContentAreaFilled(false);
-            setOpaque(false);
-            setRolloverEnabled(false);
-            setMargin(new Insets(0, 14, 0, 8));
-            setCursor(new Cursor(Cursor.HAND_CURSOR));
-        }
-
-        void setSelectedVisual(boolean value) {
-            selectedVisual = value;
-            repaint();
-        }
-
-        void setBorderColor(Color color) {
-            borderColor = color;
-            repaint();
-        }
-
-        @Override
-        protected void paintComponent(Graphics g) {
-            Graphics2D g2 = (Graphics2D) g.create();
-            g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
-            g2.setColor(DARK_GREEN);
-            g2.fillRect(0, 0, getWidth(), getHeight());
-
-            if (selectedVisual) {
-                g2.setColor(PRIMARY_GREEN);
-                g2.fillRect(0, 0, getWidth(), getHeight());
-            }
-
-            if (borderColor != DARK_GREEN || selectedVisual) {
-                g2.setColor(selectedVisual ? PRIMARY_GREEN : borderColor);
-                g2.drawRect(0, 0, getWidth() - 1, getHeight() - 1);
-            }
-
-            g2.setColor(Color.WHITE);
-            g2.setFont(getFont());
-            FontMetrics fm = g2.getFontMetrics();
-            int x = 14;
-            int y = (getHeight() - fm.getHeight()) / 2 + fm.getAscent();
-            g2.drawString(getText(), x, y);
-            g2.dispose();
-        }
-    }
-
-    // ================= MAIN AREA =================
-
-    private JPanel buildMainArea() {
-        JPanel wrapper = new JPanel(new BorderLayout());
-        wrapper.setBackground(BG);
-
-        JPanel header = new JPanel(new BorderLayout());
-        header.setBackground(Color.WHITE);
-        header.setBorder(new EmptyBorder(20, 25, 18, 25));
-
-        JPanel titlePanel = new JPanel();
-        titlePanel.setOpaque(false);
-        titlePanel.setLayout(new BoxLayout(titlePanel, BoxLayout.Y_AXIS));
-
-        pageTitle = new JLabel("Student Dashboard");
-        pageTitle.setFont(FONT_HEADING);
-        pageTitle.setForeground(TEXT);
-
-        JLabel subtitle = new JLabel("Placement & Recruitment");
-        subtitle.setForeground(MUTED);
-        subtitle.setFont(new Font("SansSerif", Font.PLAIN, 12));
-
-        titlePanel.add(pageTitle);
-        titlePanel.add(Box.createVerticalStrut(3));
-        titlePanel.add(subtitle);
-
-        header.add(titlePanel, BorderLayout.WEST);
-
-        JLabel profile = new JLabel("<html><b>" + escapeHtml(studentName)
-                + "</b><br><font color='#69736C'>" + escapeHtml(prn) + "</font></html>");
-        profile.setHorizontalAlignment(SwingConstants.RIGHT);
-        header.add(profile, BorderLayout.EAST);
-
-        wrapper.add(header, BorderLayout.NORTH);
-
-        JPanel contentWrapper = new JPanel(new BorderLayout());
-        contentWrapper.setBackground(BG);
-        contentWrapper.setBorder(new EmptyBorder(20, 25, 25, 25));
-        contentWrapper.add(contentPanel, BorderLayout.CENTER);
-        wrapper.add(contentWrapper, BorderLayout.CENTER);
-
-        return wrapper;
-    }
-
-    private JLabel pageTitle;
-
-    private void showPage(String card, JButton button, String title) {
-        if (selectedButton instanceof SolidMenuButton) {
-            ((SolidMenuButton) selectedButton).setSelectedVisual(false);
-        }
-        selectedButton = (SolidMenuButton) button;
-        selectedButton.setSelectedVisual(true);
-        pageTitle.setText(title);
-        cardLayout.show(contentPanel, card);
-    }
-
-    // ================= DASHBOARD =================
-
-    private JPanel buildDashboardPage() {
-        JPanel root = new JPanel(new BorderLayout(0, 20));
-        root.setBackground(BG);
-
-        JPanel top = new JPanel(new BorderLayout(0, 15));
-        top.setOpaque(false);
-
-        JPanel welcome = new JPanel();
-        welcome.setOpaque(false);
-        welcome.setLayout(new BoxLayout(welcome, BoxLayout.Y_AXIS));
-
-        JLabel greet = new JLabel("Welcome back, " + studentName);
-        greet.setFont(new Font("SansSerif", Font.BOLD, 19));
-        greet.setForeground(TEXT);
-        welcome.add(greet);
-
-        JLabel desc = new JLabel("Track your placement opportunities, applications and upcoming deadlines.");
-        desc.setFont(FONT_BODY);
-        desc.setForeground(MUTED);
-        welcome.add(Box.createVerticalStrut(4));
-        welcome.add(desc);
-        top.add(welcome, BorderLayout.NORTH);
-
-        JPanel stats = new JPanel(new GridLayout(1, 4, 15, 0));
-        stats.setOpaque(false);
-
-        eligibleValue = statCard(stats, "Eligible Drives", "6", "Available to apply");
-        appliedValue = statCard(stats, "Applied", "4", "Active applications");
-        shortlistedValue = statCard(stats, "Shortlisted", "2", "Current shortlist");
-        deadlineValue = statCard(stats, "Upcoming Deadlines", "3", "Within next 10 days");
-
-        top.add(stats, BorderLayout.CENTER);
-        root.add(top, BorderLayout.NORTH);
-
-        JPanel lower = new JPanel(new GridLayout(1, 2, 20, 0));
-        lower.setOpaque(false);
-        lower.add(buildEligibleDrivesCard());
-        lower.add(buildUpcomingCard());
-        root.add(lower, BorderLayout.CENTER);
-
-        return root;
-    }
-
-    private JLabel statCard(JPanel parent, String name, String value, String note) {
-        JPanel card = new JPanel();
-        card.setBackground(Color.WHITE);
-        card.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(BORDER),
-                new EmptyBorder(16, 18, 16, 18)
-        ));
-        card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
-
-        JLabel label = new JLabel(name);
-        label.setFont(FONT_LABEL);
-        label.setForeground(MUTED);
-
-        JLabel valueLabel = new JLabel(value);
-        valueLabel.setFont(new Font("SansSerif", Font.BOLD, 28));
-        valueLabel.setForeground(PRIMARY_GREEN);
-        valueLabel.setBorder(new EmptyBorder(7, 0, 2, 0));
-
-        JLabel desc = new JLabel(note);
-        desc.setFont(new Font("SansSerif", Font.PLAIN, 11));
-        desc.setForeground(MUTED);
-
-        card.add(label);
-        card.add(valueLabel);
-        card.add(desc);
-        parent.add(card);
-        return valueLabel;
-    }
-
-    private JPanel buildEligibleDrivesCard() {
-        JPanel card = whiteSection("Eligible Placement Drives");
-
-        String[] columns = {"Company", "Role", "Package", "Deadline", "Action"};
-        Object[][] rows = {
-                {"Infosys", "Software Engineer", "6.5 LPA", "12 Sep", "Apply"},
-                {"TCS", "Graduate Engineer", "7.2 LPA", "15 Sep", "Apply"},
-                {"Deloitte", "Analyst", "8.0 LPA", "18 Sep", "Apply"},
-                {"Accenture", "Associate", "6.0 LPA", "20 Sep", "Apply"}
-        };
-
-        JTable table = createTable(columns, rows);
-        table.getColumnModel().getColumn(4).setCellRenderer(new ActionTextRenderer());
-        card.add(new JScrollPane(table), BorderLayout.CENTER);
-        return card;
-    }
-
-    private JPanel buildUpcomingCard() {
-        JPanel card = whiteSection("Upcoming Deadlines");
-
-        Object[][] rows = {
-                {"Infosys", "Registration", "12 Sep 2026", "2 days"},
-                {"TCS", "Application", "15 Sep 2026", "5 days"},
-                {"Deloitte", "Registration", "18 Sep 2026", "8 days"},
-                {"Amazon", "Application", "20 Sep 2026", "10 days"}
-        };
-        String[] columns = {"Company", "Type", "Deadline", "Remaining"};
-
-        JTable table = createTable(columns, rows);
-        card.add(new JScrollPane(table), BorderLayout.CENTER);
-        return card;
-    }
-
-    // ================= PLACEMENT DRIVES =================
-
-    private JPanel buildDrivesPage() {
-        JPanel root = pageContainer();
-
-        JPanel header = simpleHeader(
-                "Placement Drives",
-                "Placement and internship opportunities shared through the placement portal."
-        );
-        root.add(header, BorderLayout.NORTH);
-
-        JPanel searchPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
-        searchPanel.setOpaque(false);
-
-        JTextField search = new JTextField(22);
-        search.setPreferredSize(new Dimension(220, 30));
-        search.setToolTipText("Search company or role");
-
-        JComboBox<String> type = new JComboBox<>(new String[]{"All Types", "Placement", "Internship"});
-        type.setPreferredSize(new Dimension(125, 30));
-
-        JCheckBox eligibleOnly = new JCheckBox("Eligible Only");
-        eligibleOnly.setOpaque(false);
-        eligibleOnly.setFont(FONT_BODY);
-
-        JButton searchButton = primaryButton("Search");
-        searchPanel.add(search);
-        searchPanel.add(type);
-        searchPanel.add(eligibleOnly);
-        searchPanel.add(searchButton);
-
-        JPanel north = new JPanel(new BorderLayout());
-        north.setOpaque(false);
-        north.add(header, BorderLayout.NORTH);
-        north.add(searchPanel, BorderLayout.SOUTH);
-        root.add(north, BorderLayout.NORTH);
-
-        String[] columns = {"Company", "Role", "Type", "Package", "Min CGPA", "Backlogs", "Deadline", "Eligibility"};
-        DefaultTableModel model = new DefaultTableModel(columns, 0) {
-            @Override
-            public boolean isCellEditable(int row, int column) {
-                return false;
-            }
-        };
-
-        for (Drive d : drives) {
-            model.addRow(new Object[]{d.company, d.role, d.type, d.packageText,
-                    d.minCgpa, d.maxBacklogs, d.deadline, d.eligible ? "Eligible" : "Not Eligible"});
-        }
-
-        JTable table = new JTable(model);
-        styleTable(table);
-        table.getColumnModel().getColumn(7).setCellRenderer(new EligibilityRenderer());
-
-        JButton viewButton = primaryButton("View / Apply");
-        viewButton.addActionListener(e -> {
-            int row = table.getSelectedRow();
-            if (row < 0) {
-                JOptionPane.showMessageDialog(this, "Select a placement drive first.", "No drive selected", JOptionPane.WARNING_MESSAGE);
-                return;
-            }
-            String company = String.valueOf(table.getValueAt(row, 0));
-            String role = String.valueOf(table.getValueAt(row, 1));
-            showDriveDialog(company, role);
-        });
-
-        JPanel actionRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 10));
-        actionRow.setOpaque(false);
-        actionRow.add(viewButton);
-
-        JPanel center = new JPanel(new BorderLayout());
-        center.setOpaque(false);
-        center.add(new JScrollPane(table), BorderLayout.CENTER);
-        center.add(actionRow, BorderLayout.SOUTH);
-        root.add(center, BorderLayout.CENTER);
-
-        return root;
-    }
-
-    private void showDriveDialog(String company, String role) {
-        String message = "<html><b>" + company + " — " + role + "</b><br><br>"
-                + "Eligibility is based on the criteria received from the placement team.<br>"
-                + "Your profile, CGPA, branch and backlog status are checked before application.<br><br>"
-                + "Selection process: Aptitude → GD → Interview<br>"
-                + "Resume: Available</html>";
-
-        int choice = JOptionPane.showConfirmDialog(
-                this,
-                message,
-                "Placement Drive Details",
-                JOptionPane.OK_CANCEL_OPTION,
-                JOptionPane.INFORMATION_MESSAGE
-        );
-
-        if (choice == JOptionPane.OK_OPTION) {
-            JOptionPane.showMessageDialog(this,
-                    "Application submitted successfully (demo frontend).",
-                    "Application Submitted",
-                    JOptionPane.INFORMATION_MESSAGE);
-        }
-    }
-
-    // ================= APPLICATIONS =================
-
-    private JPanel buildApplicationsPage() {
-        JPanel root = pageContainer();
-        root.add(simpleHeader("My Applications", "Track the current stage and status of every application."), BorderLayout.NORTH);
-
-        String[] columns = {"Company", "Role", "Applied On", "Current Stage", "Status"};
-        Object[][] rows = new Object[applications.size()][5];
-        for (int i = 0; i < applications.size(); i++) {
-            Application a = applications.get(i);
-            rows[i] = new Object[]{a.company, a.role, a.appliedOn, a.stage, a.status};
-        }
-
-        JTable table = createTable(columns, rows);
-        table.getColumnModel().getColumn(4).setCellRenderer(new StatusRenderer());
-
-        JPanel center = new JPanel(new BorderLayout());
-        center.setOpaque(false);
-        center.add(new JScrollPane(table), BorderLayout.CENTER);
-
-        JButton details = primaryButton("View Application Details");
-        details.addActionListener(e -> {
-            int row = table.getSelectedRow();
-            if (row < 0) {
-                JOptionPane.showMessageDialog(this, "Select an application first.", "No application selected", JOptionPane.WARNING_MESSAGE);
-                return;
-            }
-            JOptionPane.showMessageDialog(this,
-                    "Application Timeline\n\nApplied ✓\nEligibility Verified ✓\n"
-                            + "Current Stage: " + table.getValueAt(row, 3)
-                            + "\nStatus: " + table.getValueAt(row, 4),
-                    "Application Details",
-                    JOptionPane.INFORMATION_MESSAGE);
-        });
-
-        JPanel action = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 10));
-        action.setOpaque(false);
-        action.add(details);
-        center.add(action, BorderLayout.SOUTH);
-        root.add(center, BorderLayout.CENTER);
-        return root;
-    }
-
-    // ================= NOTIFICATIONS =================
-
-    private JPanel buildNotificationsPage() {
-        JPanel root = pageContainer();
-        root.add(simpleHeader("Notifications", "Eligibility alerts, placement updates and deadline reminders."), BorderLayout.NORTH);
-
-        JPanel list = new JPanel();
-        list.setBackground(Color.WHITE);
-        list.setLayout(new BoxLayout(list, BoxLayout.Y_AXIS));
-        list.setBorder(new EmptyBorder(6, 8, 6, 8));
-
-        for (Notice n : notices) {
-            addNotice(list, n);
-        }
-
-        JScrollPane scroll = new JScrollPane(list);
-        scroll.setBorder(BorderFactory.createLineBorder(BORDER));
-        root.add(scroll, BorderLayout.CENTER);
-        return root;
-    }
-
-    private void addNotice(JPanel parent, Notice n) {
-        JPanel item = new JPanel(new BorderLayout());
-        item.setBackground(Color.WHITE);
-        item.setBorder(new CompoundBorder2());
-        item.setMaximumSize(new Dimension(Integer.MAX_VALUE, 65));
-
-        JPanel left = new JPanel();
-        left.setOpaque(false);
-        left.setLayout(new BoxLayout(left, BoxLayout.Y_AXIS));
-
-        JLabel title = new JLabel(n.title);
-        title.setFont(FONT_LABEL);
-        title.setForeground(TEXT);
-
-        JLabel body = new JLabel(n.body);
-        body.setFont(FONT_BODY);
-        body.setForeground(MUTED);
-
-        left.add(title);
-        left.add(Box.createVerticalStrut(4));
-        left.add(body);
-
-        JLabel date = new JLabel(n.date);
-        date.setFont(new Font("SansSerif", Font.PLAIN, 11));
-        date.setForeground(MUTED);
-
-        item.add(left, BorderLayout.CENTER);
-        item.add(date, BorderLayout.EAST);
-        parent.add(item);
-        parent.add(Box.createVerticalStrut(4));
-    }
-
-    // ================= RESUME =================
-
-    private JPanel buildResumePage() {
-        JPanel root = pageContainer();
-        root.add(simpleHeader("My Resume", "Keep your latest resume ready before applying to placement drives."), BorderLayout.NORTH);
-
-        JPanel card = new JPanel(new BorderLayout(20, 20));
-        card.setBackground(Color.WHITE);
-        card.setBorder(new EmptyBorder(25, 25, 25, 25));
-
-        JPanel details = new JPanel();
-        details.setOpaque(false);
-        details.setLayout(new BoxLayout(details, BoxLayout.Y_AXIS));
-
-        JLabel file = new JLabel("resume_gayatri.pdf");
-        file.setFont(new Font("SansSerif", Font.BOLD, 17));
-        file.setForeground(TEXT);
-
-        JLabel uploaded = new JLabel("Uploaded: 08 Sep 2026");
-        uploaded.setForeground(MUTED);
-        uploaded.setFont(FONT_BODY);
-
-        JLabel ready = new JLabel("Ready for applications");
-        ready.setForeground(SUCCESS);
-        ready.setFont(FONT_LABEL);
-
-        details.add(file);
-        details.add(Box.createVerticalStrut(7));
-        details.add(uploaded);
-        details.add(Box.createVerticalStrut(12));
-        details.add(ready);
-
-        card.add(details, BorderLayout.CENTER);
-
-        JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
-        actions.setOpaque(false);
-        JButton view = primaryButton("View Resume");
-        JButton update = primaryButton("Update Resume");
-        actions.add(view);
-        actions.add(update);
-        card.add(actions, BorderLayout.SOUTH);
-
-        view.addActionListener(e -> JOptionPane.showMessageDialog(this,
-                "Resume preview would open here (frontend placeholder).",
-                "Resume",
-                JOptionPane.INFORMATION_MESSAGE));
-        update.addActionListener(e -> JOptionPane.showMessageDialog(this,
-                "File chooser / upload API will be connected here.",
-                "Update Resume",
-                JOptionPane.INFORMATION_MESSAGE));
-
-        root.add(card, BorderLayout.CENTER);
-        return root;
-    }
-
-    // ================= PROFILE =================
-
-    private JPanel buildProfilePage() {
-        JPanel root = pageContainer();
-        root.add(simpleHeader("My Profile", "Your academic and placement profile used for eligibility checks."), BorderLayout.NORTH);
-
-        JPanel form = new JPanel(new GridLayout(4, 2, 18, 18));
-        form.setBackground(Color.WHITE);
-        form.setBorder(new EmptyBorder(25, 25, 25, 25));
-
-        addField(form, "Name", studentName);
-        addField(form, "PRN", prn);
-        addField(form, "Course", "B.E. Computer Engineering");
-        addField(form, "Department", "Computer Engineering");
-        addField(form, "CGPA", "8.72");
-        addField(form, "10th Percentage", "92%");
-        addField(form, "12th Percentage", "88%");
-        addField(form, "Backlogs", "0");
-
-        root.add(form, BorderLayout.CENTER);
-
-        JPanel skills = new JPanel(new BorderLayout());
-        skills.setBackground(Color.WHITE);
-        skills.setBorder(new EmptyBorder(0, 25, 25, 25));
-        JLabel skillLabel = new JLabel("Skills");
-        skillLabel.setFont(FONT_LABEL);
-        skillLabel.setForeground(MUTED);
-        JLabel skillValue = new JLabel("C++, Java, HTML/CSS/JS, SQL, React");
-        skillValue.setFont(FONT_BODY);
-        skillValue.setForeground(TEXT);
-        skills.add(skillLabel, BorderLayout.NORTH);
-        skills.add(skillValue, BorderLayout.CENTER);
-        root.add(skills, BorderLayout.SOUTH);
-
-        return root;
-    }
-
-    private void addField(JPanel parent, String label, String value) {
-        JPanel field = new JPanel();
-        field.setOpaque(false);
-        field.setLayout(new BoxLayout(field, BoxLayout.Y_AXIS));
-
-        JLabel l = new JLabel(label);
-        l.setFont(FONT_LABEL);
-        l.setForeground(MUTED);
-        JLabel v = new JLabel(value);
-        v.setFont(new Font("SansSerif", Font.BOLD, 14));
-        v.setForeground(TEXT);
-
-        field.add(l);
-        field.add(Box.createVerticalStrut(5));
-        field.add(v);
-        parent.add(field);
-    }
-
-    // ================= PLACEMENT STATUS =================
-
-    private JPanel buildStatusPage() {
-        JPanel root = pageContainer();
-        root.add(simpleHeader("Placement Status", "Your overall placement journey and current outcome."), BorderLayout.NORTH);
-
-        JPanel card = new JPanel(new BorderLayout(0, 20));
-        card.setBackground(Color.WHITE);
-        card.setBorder(new EmptyBorder(25, 25, 25, 25));
-
-        JPanel summary = new JPanel(new GridLayout(1, 3, 15, 0));
-        summary.setOpaque(false);
-        summary.add(miniStatus("Applications", "4", "Submitted"));
-        summary.add(miniStatus("Shortlisted", "2", "Current"));
-        summary.add(miniStatus("Interviews", "1", "Upcoming"));
-        card.add(summary, BorderLayout.NORTH);
-
-        JPanel timeline = new JPanel();
-        timeline.setOpaque(false);
-        timeline.setLayout(new BoxLayout(timeline, BoxLayout.Y_AXIS));
-        addTimelineStep(timeline, "Profile completed", true);
-        addTimelineStep(timeline, "Resume uploaded", true);
-        addTimelineStep(timeline, "Applications submitted", true);
-        addTimelineStep(timeline, "Shortlisted for interviews", true);
-        addTimelineStep(timeline, "Final placement result", false);
-        card.add(timeline, BorderLayout.CENTER);
-
-        root.add(card, BorderLayout.CENTER);
-        return root;
-    }
-
-    private JPanel miniStatus(String title, String value, String note) {
+    private JPanel side() {
         JPanel p = new JPanel();
-        p.setBackground(LIGHT_GREEN);
-        p.setBorder(new EmptyBorder(14, 14, 14, 14));
+        p.setPreferredSize(new Dimension(220, 760));
+        p.setBackground(DARK());
+        p.setBorder(new EmptyBorder(28, 16, 18, 16));
         p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
-
-        JLabel t = new JLabel(title);
-        t.setFont(FONT_LABEL);
-        t.setForeground(MUTED);
-        JLabel v = new JLabel(value);
-        v.setFont(new Font("SansSerif", Font.BOLD, 25));
-        v.setForeground(PRIMARY_GREEN);
-        JLabel n = new JLabel(note);
-        n.setFont(new Font("SansSerif", Font.PLAIN, 11));
-        n.setForeground(MUTED);
-
-        p.add(t);
-        p.add(Box.createVerticalStrut(5));
-        p.add(v);
-        p.add(n);
+        p.add(lbl("PLACEMENT", 23, true, Color.WHITE));
+        p.add(lbl("ELIGIBILITY PORTAL", 11, false, new Color(220, 245, 225)));
+        p.add(Box.createVerticalStrut(25));
+        nav(p, "Dashboard", "D");
+        nav(p, "Placement Drives", "J");
+        nav(p, "My Applications", "A");
+        nav(p, "Notifications", "N");
+        nav(p, "My Profile", "P");
+        p.add(Box.createVerticalGlue());
+        nav(p, "Logout", null);
         return p;
     }
 
-    private void addTimelineStep(JPanel parent, String text, boolean complete) {
-        JLabel step = new JLabel((complete ? "✓  " : "○  ") + text);
-        step.setFont(new Font("SansSerif", complete ? Font.BOLD : Font.PLAIN, 14));
-        step.setForeground(complete ? SUCCESS : MUTED);
-        step.setBorder(new EmptyBorder(8, 5, 8, 5));
-        parent.add(step);
-    }
-
-    // ================= COMMON UI =================
-
-    private JPanel pageContainer() {
-        JPanel p = new JPanel(new BorderLayout(0, 15));
-        p.setBackground(BG);
-        return p;
-    }
-
-    private JPanel simpleHeader(String title, String description) {
-        JPanel header = new JPanel();
-        header.setOpaque(false);
-        header.setLayout(new BoxLayout(header, BoxLayout.Y_AXIS));
-
-        JLabel h = new JLabel(title);
-        h.setFont(FONT_HEADING);
-        h.setForeground(TEXT);
-
-        JLabel d = new JLabel(description);
-        d.setFont(FONT_BODY);
-        d.setForeground(MUTED);
-        d.setBorder(new EmptyBorder(4, 0, 0, 0));
-
-        header.add(h);
-        header.add(d);
-        return header;
-    }
-
-    private JPanel whiteSection(String title) {
-        JPanel card = new JPanel(new BorderLayout(0, 10));
-        card.setBackground(Color.WHITE);
-        card.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(BORDER),
-                new EmptyBorder(15, 15, 15, 15)
-        ));
-
-        JLabel heading = new JLabel(title);
-        heading.setFont(FONT_SECTION);
-        heading.setForeground(TEXT);
-        card.add(heading, BorderLayout.NORTH);
-        return card;
-    }
-
-    private JTable createTable(String[] columns, Object[][] rows) {
-        DefaultTableModel model = new DefaultTableModel(rows, columns) {
-            @Override
-            public boolean isCellEditable(int row, int column) {
-                return false;
-            }
-        };
-        JTable table = new JTable(model);
-        styleTable(table);
-        return table;
-    }
-
-    private void styleTable(JTable table) {
-        table.setRowHeight(29);
-        table.setFont(new Font("SansSerif", Font.PLAIN, 12));
-        table.setForeground(TEXT);
-        table.setGridColor(new Color(232, 235, 232));
-        table.setSelectionBackground(LIGHT_GREEN);
-        table.setSelectionForeground(TEXT);
-        table.getTableHeader().setFont(new Font("SansSerif", Font.BOLD, 12));
-        table.getTableHeader().setBackground(new Color(245, 247, 245));
-        table.getTableHeader().setForeground(TEXT);
-    }
-
-    private JButton primaryButton(String text) {
+    private void nav(JPanel p, String text, String card) {
         JButton b = new JButton(text);
-        b.setBackground(DARK_GREEN);
+        b.setMaximumSize(new Dimension(188, 40));
+        b.setAlignmentX(Component.LEFT_ALIGNMENT);
+        b.setHorizontalAlignment(SwingConstants.LEFT);
         b.setForeground(Color.WHITE);
-        b.setFont(new Font("SansSerif", Font.BOLD, 12));
+        b.setBackground(DARK());
+        b.setBorderPainted(false);
         b.setFocusPainted(false);
-        b.setBorder(new EmptyBorder(8, 15, 8, 15));
+        b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        if (card == null) {
+            b.addActionListener(e -> logout());
+        } else {
+            b.addActionListener(e -> {
+                cards.show(content, card);
+                if (card.equals("J")) loadJobs();
+                if (card.equals("A")) loadApps();
+                if (card.equals("N")) loadNotes();
+                if (card.equals("P")) loadProfile();
+            });
+        }
+        p.add(b);
+        p.add(Box.createVerticalStrut(4));
+    }
+
+    private JPanel header() {
+        JPanel p = new JPanel(new BorderLayout());
+        p.setBackground(Color.WHITE);
+        p.setBorder(new EmptyBorder(18, 24, 18, 24));
+        p.add(lbl("Student Dashboard", 22, true, TEXT()), BorderLayout.WEST);
+        p.add(lbl(name, 13, false, MUTED()), BorderLayout.EAST);
+        return p;
+    }
+
+    // =========================================================
+    // DASHBOARD (home)
+    // =========================================================
+
+    private JPanel dashboard() {
+        JPanel p = page();
+        p.add(lbl("Welcome, " + name, 22, true, TEXT()), BorderLayout.NORTH);
+
+        JPanel center = new JPanel(new BorderLayout(0, 18));
+        center.setOpaque(false);
+
+        JPanel statsRow = new JPanel(new GridLayout(1, 3, 16, 0));
+        statsRow.setOpaque(false);
+        statOpen = lbl("-", 28, true, DARK());
+        statApplied = lbl("-", 28, true, DARK());
+        statSelected = lbl("-", 28, true, DARK());
+        statsRow.add(statCard("Drives You Can Apply To", statOpen));
+        statsRow.add(statCard("Applications Submitted", statApplied));
+        statsRow.add(statCard("Offers / Selected", statSelected));
+        center.add(statsRow, BorderLayout.NORTH);
+
+        JPanel info = new JPanel(new GridLayout(1, 2, 16, 0));
+        info.setOpaque(false);
+        info.add(card("Placement Overview", "Live data is loaded directly from the placement database."));
+        info.add(card("Quick Guide", "Use Placement Drives to view and apply to eligible jobs, and track progress under My Applications."));
+        center.add(info, BorderLayout.CENTER);
+
+        p.add(center, BorderLayout.CENTER);
+        return p;
+    }
+
+    private JPanel statCard(String title, JLabel valueLabel) {
+        JPanel c = new JPanel(new BorderLayout(0, 6));
+        c.setBackground(Color.WHITE);
+        c.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(215, 222, 216)),
+                new EmptyBorder(16, 18, 16, 18)));
+        c.add(lbl(title, 13, false, MUTED()), BorderLayout.NORTH);
+        c.add(valueLabel, BorderLayout.CENTER);
+        return c;
+    }
+
+    private JPanel card(String title, String text) {
+        JPanel c = new JPanel(new BorderLayout(0, 8));
+        c.setBackground(Color.WHITE);
+        c.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(215, 222, 216)),
+                new EmptyBorder(18, 18, 18, 18)));
+        c.add(lbl(title, 16, true, DARK()), BorderLayout.NORTH);
+        c.add(lbl("<html><div style='width:360px'>" + text + "</div></html>", 13, false, MUTED()), BorderLayout.CENTER);
+        return c;
+    }
+
+    private void updateStats() {
+        statOpen.setText(String.valueOf(jobs.getRowCount()));
+        statApplied.setText(String.valueOf(apps.getRowCount()));
+        int selected = 0;
+        for (int i = 0; i < apps.getRowCount(); i++) {
+            Object status = apps.getValueAt(i, 3);
+            if (status != null && status.toString().toUpperCase().contains("SELECT")) selected++;
+        }
+        statSelected.setText(String.valueOf(selected));
+    }
+
+    // =========================================================
+    // PLACEMENT DRIVES
+    // =========================================================
+
+    private JPanel jobsPage() {
+        JPanel p = page();
+
+        JPanel top = new JPanel(new FlowLayout(FlowLayout.LEFT, 7, 0));
+        top.setOpaque(false);
+        search = new JTextField(12);
+        branchFilter = box("ALL", "CSE", "IT", "ECE", "MECH", "CIVIL");
+        sortBox = box("Deadline (Soonest)", "Company (A-Z)", "Min CGPA (Low-High)", "Min CGPA (High-Low)");
+        top.add(new JLabel("Search Company")); top.add(search);
+        top.add(new JLabel("Branch")); top.add(branchFilter);
+        top.add(new JLabel("Sort")); top.add(sortBox);
+        JButton applyFilter = btn("Apply"); applyFilter.addActionListener(e -> applyFilters());
+        JButton clear = btn("Clear");
+        clear.addActionListener(e -> {
+            search.setText(""); branchFilter.setSelectedIndex(0); sortBox.setSelectedIndex(0); applyFilters();
+        });
+        JButton refresh = btn("Refresh"); refresh.addActionListener(e -> loadJobs());
+        JButton applyJob = btn("Apply to Selected Job"); applyJob.addActionListener(e -> apply());
+        top.add(applyFilter); top.add(clear); top.add(refresh); top.add(applyJob);
+        p.add(top, BorderLayout.NORTH);
+
+        style(jobsT);
+        p.add(new JScrollPane(jobsT), BorderLayout.CENTER);
+
+        JLabel note = lbl("Showing only drives you currently qualify for. If this list ever looks wrong, it means the server does not yet support profile lookups and all open drives are shown instead.", 11, false, MUTED());
+        p.add(note, BorderLayout.SOUTH);
+        return p;
+    }
+
+    private void loadJobs() {
+        allJobs.clear();
+        try {
+            SocketClient.ListResponse r = client.sendListRequest("GET_JOBS", token);
+            if (!r.success) throw new Exception(r.errorMessage);
+            for (String l : r.lines) {
+                String[] x = l.split("\\|", -1);
+                if (x.length >= 10) allJobs.add(x);
+            }
+        } catch (Exception ignored) {}
+        if (!profileLoaded) loadProfile();
+        applyFilters();
+    }
+
+    private void applyFilters() {
+        jobs.setRowCount(0);
+        String companyQuery = search == null ? "" : search.getText().trim().toLowerCase();
+        String branch = branchFilter == null ? "ALL" : (String) branchFilter.getSelectedItem();
+        String sort = sortBox == null ? "Deadline (Soonest)" : (String) sortBox.getSelectedItem();
+
+        List<String[]> rows = new ArrayList<>();
+        for (String[] x : allJobs) {
+            if (!isEligible(x)) continue;
+            if (!companyQuery.isBlank() && !x[1].toLowerCase().contains(companyQuery)) continue;
+            if (branch != null && !branch.equals("ALL") && !branchListContains(x[5], branch)) continue;
+            rows.add(x);
+        }
+
+        rows.sort((a, b) -> {
+            if ("Company (A-Z)".equals(sort)) return a[1].compareToIgnoreCase(b[1]);
+            if ("Min CGPA (Low-High)".equals(sort)) return Double.compare(parseD(a[4]), parseD(b[4]));
+            if ("Min CGPA (High-Low)".equals(sort)) return Double.compare(parseD(b[4]), parseD(a[4]));
+            return deadlineRank(a[9]).compareTo(deadlineRank(b[9])); // Deadline (Soonest), default
+        });
+
+        for (String[] x : rows) {
+            jobs.addRow(new Object[]{x[0].isBlank() ? "-" : x[0], x[1], x[2], x[3], x[4], x[5], x[6], x[7], x[8].isBlank() ? "-" : x[8], formatDeadline(x[9])});
+        }
+        updateStats();
+    }
+
+    /**
+     * Mirrors the server's own eligibility rule (EligibilityDAO.findEligible):
+     * cgpa >= min, backlogs <= max, passing year matches exactly, department
+     * is one of the job's allowed branches, and (if the job names required
+     * skills) the student has every one of them.
+     *
+     * Falls back to "eligible" for every job when the student's own profile
+     * has not been loaded yet (GET_MY_PROFILE not available from the backend
+     * today), so the list simply shows everything until that command ships.
+     */
+    private boolean isEligible(String[] job) {
+        if (!profileLoaded) return true;
+        double jobMinCgpa = parseD(job[4]);
+        int jobMaxBacklogs = parseI(job[6]);
+        int jobYear = parseI(job[7]);
+        if (profileCgpa < jobMinCgpa) return false;
+        if (profileBacklogs > jobMaxBacklogs) return false;
+        if (jobYear != 0 && profilePassingYear != jobYear) return false;
+        if (!branchListContains(job[5], profileDept)) return false;
+        return skillsMatch(profileSkills, job[8]);
+    }
+
+    private boolean branchListContains(String csv, String branch) {
+        if (csv == null || csv.isBlank() || branch == null || branch.isBlank()) return true;
+        for (String b : csv.split(",")) if (b.trim().equalsIgnoreCase(branch.trim())) return true;
+        return false;
+    }
+
+    private boolean skillsMatch(String studentSkillsCsv, String requiredSkillsCsv) {
+        if (requiredSkillsCsv == null || requiredSkillsCsv.isBlank()) return true;
+        Set<String> have = new HashSet<>();
+        if (studentSkillsCsv != null) for (String s : studentSkillsCsv.split(",")) have.add(s.trim().toLowerCase());
+        for (String req : requiredSkillsCsv.split(",")) {
+            if (req.isBlank()) continue;
+            if (!have.contains(req.trim().toLowerCase())) return false;
+        }
+        return true;
+    }
+
+    private void apply() {
+        int row = jobsT.getSelectedRow();
+        if (row < 0) { JOptionPane.showMessageDialog(this, "Select a job first."); return; }
+        int modelRow = jobsT.convertRowIndexToModel(row);
+        try {
+            SocketClient.Response r = client.sendRequest("APPLY_JOB", token, String.valueOf(jobs.getValueAt(modelRow, 0)));
+            if (!r.success) throw new Exception(r.payload);
+            JOptionPane.showMessageDialog(this, "Application submitted successfully.");
+            loadApps();
+        } catch (Exception e) { JOptionPane.showMessageDialog(this, e.getMessage()); }
+    }
+
+    // =========================================================
+    // MY APPLICATIONS
+    // =========================================================
+
+    private JPanel appsPage() {
+        JPanel p = page();
+        JPanel top = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        top.setOpaque(false);
+        JButton r = btn("Refresh"); r.addActionListener(e -> loadApps());
+        JButton w = btn("Withdraw Selected"); w.addActionListener(e -> withdraw());
+        top.add(r); top.add(w);
+        p.add(top, BorderLayout.NORTH);
+        style(appsT);
+        p.add(new JScrollPane(appsT), BorderLayout.CENTER);
+        return p;
+    }
+
+    private void loadApps() {
+        apps.setRowCount(0);
+        try {
+            SocketClient.ListResponse r = client.sendListRequest("GET_MY_APPLICATIONS", token);
+            if (!r.success) return;
+            for (String l : r.lines) {
+                String[] x = l.split("\\|", -1);
+                if (x.length >= 6) apps.addRow(x);
+            }
+        } catch (Exception ignored) {}
+        updateStats();
+    }
+
+    private void withdraw() {
+        int row = appsT.getSelectedRow();
+        if (row < 0) { JOptionPane.showMessageDialog(this, "Select an application first."); return; }
+        int modelRow = appsT.convertRowIndexToModel(row);
+        String status = String.valueOf(apps.getValueAt(modelRow, 3));
+        if (!status.equalsIgnoreCase("APPLIED")) {
+            JOptionPane.showMessageDialog(this, "Only a pending application can be withdrawn.");
+            return;
+        }
+        String jobId = String.valueOf(apps.getValueAt(modelRow, 0));
+        if (JOptionPane.showConfirmDialog(this, "Withdraw your application for " + jobId + "?", "Withdraw Application", JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION) return;
+        try {
+            SocketClient.Response r = client.sendRequest("WITHDRAW_APPLICATION", token, jobId);
+            if (!r.success) throw new Exception(r.payload);
+            JOptionPane.showMessageDialog(this, "Application withdrawn.");
+            loadApps();
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Unable to withdraw: " + e.getMessage()
+                    + "\n(This action needs the WITHDRAW_APPLICATION command, which the server may not support yet.)");
+        }
+    }
+
+    // =========================================================
+    // NOTIFICATIONS
+    // =========================================================
+
+    private JPanel notesPage() {
+        JPanel p = page();
+        JPanel top = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        top.setOpaque(false);
+        JButton r = btn("Refresh"); r.addActionListener(e -> loadNotes());
+        JButton m = btn("Mark as Read"); m.addActionListener(e -> markRead());
+        top.add(r); top.add(m);
+        p.add(top, BorderLayout.NORTH);
+        style(notesT);
+        notesT.setDefaultRenderer(Object.class, new DefaultTableCellRenderer() {
+            @Override public Component getTableCellRendererComponent(JTable t, Object v, boolean sel, boolean foc, int row, int col) {
+                Component c = super.getTableCellRendererComponent(t, v, sel, foc, row, col);
+                setHorizontalAlignment(SwingConstants.CENTER);
+                int modelRow = t.convertRowIndexToModel(row);
+                boolean unread = "Unread".equals(t.getModel().getValueAt(modelRow, 0));
+                c.setFont(c.getFont().deriveFont(unread ? Font.BOLD : Font.PLAIN));
+                return c;
+            }
+        });
+        p.add(new JScrollPane(notesT), BorderLayout.CENTER);
+        return p;
+    }
+
+    private void loadNotes() {
+        notes.setRowCount(0);
+        try {
+            SocketClient.ListResponse r = client.sendListRequest("GET_NOTIFICATIONS", token);
+            if (!r.success) return;
+            for (String l : r.lines) {
+                String[] x = l.split("\\|", -1);
+                if (x.length >= 7) {
+                    String id = x[0];
+                    String status = readNotifications.contains(id) ? "Read" : "Unread";
+                    notes.addRow(new Object[]{status, id, x[1], x[2], x[3], x[5], x[6]});
+                }
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private void markRead() {
+        int row = notesT.getSelectedRow();
+        if (row < 0) { JOptionPane.showMessageDialog(this, "Select a notification first."); return; }
+        int modelRow = notesT.convertRowIndexToModel(row);
+        String id = String.valueOf(notes.getValueAt(modelRow, 1));
+        readNotifications.add(id);
+        notes.setValueAt("Read", modelRow, 0);
+        notesT.repaint();
+    }
+
+    // =========================================================
+    // MY PROFILE
+    // =========================================================
+
+    private JPanel profilePage() {
+        JPanel p = page();
+        JPanel outer = new JPanel(new BorderLayout(0, 18));
+        outer.setOpaque(false);
+
+        JPanel viewCard = new JPanel(new GridLayout(0, 2, 10, 10));
+        viewCard.setBackground(Color.WHITE);
+        viewCard.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(215, 222, 216)), new EmptyBorder(18, 18, 18, 18)));
+        prnField = readOnlyField(); nameField = readOnlyField(); emailField = readOnlyField();
+        deptField = readOnlyField(); cgpaField = readOnlyField(); yearField = readOnlyField();
+        backlogsField = readOnlyField(); semField = readOnlyField();
+        addRow(viewCard, "PRN", prnField); addRow(viewCard, "Name", nameField);
+        addRow(viewCard, "Login Email", emailField); addRow(viewCard, "Department", deptField);
+        addRow(viewCard, "CGPA", cgpaField); addRow(viewCard, "Passing Year", yearField);
+        addRow(viewCard, "Backlogs", backlogsField); addRow(viewCard, "Semester", semField);
+
+        JPanel editCard = new JPanel(new GridLayout(0, 2, 10, 10));
+        editCard.setBackground(Color.WHITE);
+        editCard.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(215, 222, 216)), new EmptyBorder(18, 18, 18, 18)));
+        phoneField = new JTextField(); skillsField = new JTextField();
+        addRow(editCard, "Phone", phoneField); addRow(editCard, "Skills (comma-separated)", skillsField);
+        JButton save = btn("Save Changes"); save.addActionListener(e -> saveProfile());
+        editCard.add(new JLabel()); editCard.add(save);
+
+        JPanel resumeCard = new JPanel(new BorderLayout(0, 10));
+        resumeCard.setBackground(Color.WHITE);
+        resumeCard.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(215, 222, 216)), new EmptyBorder(18, 18, 18, 18)));
+        resumeCard.add(lbl("Resume", 16, true, DARK()), BorderLayout.NORTH);
+        resumeStatus = lbl("Checking resume status...", 13, false, MUTED());
+        JPanel resumeButtons = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        resumeButtons.setOpaque(false);
+        JButton upload = btn("Upload / Replace Resume"); upload.addActionListener(e -> uploadResume());
+        JButton download = btn("Download Resume"); download.addActionListener(e -> downloadResume());
+        resumeButtons.add(upload); resumeButtons.add(download);
+        JPanel resumeBody = new JPanel(new BorderLayout(0, 8));
+        resumeBody.setOpaque(false);
+        resumeBody.add(resumeStatus, BorderLayout.NORTH);
+        resumeBody.add(resumeButtons, BorderLayout.CENTER);
+        resumeCard.add(resumeBody, BorderLayout.CENTER);
+
+        JPanel top = new JPanel(new GridLayout(1, 2, 16, 0));
+        top.setOpaque(false);
+        JPanel viewWrap = new JPanel(new BorderLayout(0, 8)); viewWrap.setOpaque(false);
+        viewWrap.add(lbl("Academic Record (view only)", 16, true, DARK()), BorderLayout.NORTH);
+        viewWrap.add(viewCard, BorderLayout.CENTER);
+        JPanel editWrap = new JPanel(new BorderLayout(0, 8)); editWrap.setOpaque(false);
+        editWrap.add(lbl("Contact Details (editable)", 16, true, DARK()), BorderLayout.NORTH);
+        editWrap.add(editCard, BorderLayout.CENTER);
+        top.add(viewWrap); top.add(editWrap);
+
+        outer.add(top, BorderLayout.NORTH);
+        outer.add(resumeCard, BorderLayout.CENTER);
+        p.add(outer, BorderLayout.CENTER);
+        return p;
+    }
+
+    private JTextField readOnlyField() {
+        JTextField f = new JTextField();
+        f.setEditable(false);
+        f.setBackground(new Color(240, 242, 239));
+        return f;
+    }
+
+    private void addRow(JPanel panel, String label, JComponent field) {
+        panel.add(new JLabel(label));
+        panel.add(field);
+    }
+
+    private void loadProfile() {
+        prnField.setText(""); nameField.setText(name); emailField.setText(email == null ? "" : email);
+        deptField.setText(""); cgpaField.setText(""); yearField.setText(""); backlogsField.setText(""); semField.setText("");
+        phoneField.setText(""); skillsField.setText("");
+        resumeStatus.setText("Checking resume status...");
+        try {
+            SocketClient.Response r = client.sendRequest("GET_MY_PROFILE", token);
+            if (!r.success) throw new Exception(r.payload);
+            // Split with limit -1: unlike r.parts() (limit 0), this keeps a trailing
+            // empty field (e.g. a student with no skills set yet) instead of silently
+            // dropping it and under-counting the fields.
+            String[] x = r.payload.split("\\|", -1);
+            if (x.length < 10) throw new Exception("Unexpected profile response.");
+            profilePrn = x[0]; nameField.setText(x[1]); emailField.setText(x[2]); profileDept = x[3];
+            profileCgpa = parseD(x[4]); profilePassingYear = parseI(x[5]); profileBacklogs = parseI(x[6]);
+            profileSemester = parseI(x[7]); profilePhone = x[8]; profileSkills = x[9];
+            profileLoaded = true;
+
+            prnField.setText(profilePrn); deptField.setText(profileDept);
+            cgpaField.setText(String.valueOf(profileCgpa)); yearField.setText(String.valueOf(profilePassingYear));
+            backlogsField.setText(String.valueOf(profileBacklogs)); semField.setText(String.valueOf(profileSemester));
+            phoneField.setText(profilePhone); skillsField.setText(profileSkills);
+        } catch (Exception e) {
+            profileLoaded = false;
+            prnField.setText("-"); deptField.setText("-"); cgpaField.setText("-");
+            yearField.setText("-"); backlogsField.setText("-"); semField.setText("-");
+            resumeStatus.setText("Profile data is not available from the server yet.");
+            return;
+        }
+        loadResumeStatus();
+    }
+
+    private void saveProfile() {
+        try {
+            SocketClient.Response r = client.sendRequest("UPDATE_MY_PROFILE", token, phoneField.getText().trim(), skillsField.getText().trim());
+            if (!r.success) throw new Exception(r.payload);
+            JOptionPane.showMessageDialog(this, "Profile updated.");
+            loadProfile();
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Unable to save: " + e.getMessage()
+                    + "\n(This action needs the UPDATE_MY_PROFILE command, which the server may not support yet.)");
+        }
+    }
+
+    private void loadResumeStatus() {
+        try {
+            SocketClient.Response r = client.sendRequest("GET_RESUME", token);
+            if (!r.success) throw new Exception(r.payload);
+            String[] x = r.payload.split("\\|", -1);
+            resumeFileName = x.length > 0 ? x[0] : null;
+            resumeStatus.setText(resumeFileName == null || resumeFileName.isBlank()
+                    ? "No resume uploaded yet." : "Current resume: " + resumeFileName);
+        } catch (Exception e) {
+            resumeFileName = null;
+            resumeStatus.setText("No resume on file yet, or the server does not support resumes.");
+        }
+    }
+
+    private void uploadResume() {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setFileFilter(new FileNameExtensionFilter("PDF or Word document", "pdf", "doc", "docx"));
+        if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return;
+        File file = chooser.getSelectedFile();
+        try {
+            byte[] bytes = Files.readAllBytes(file.toPath());
+            String encoded = Base64.getEncoder().encodeToString(bytes);
+            SocketClient.Response r = client.sendRequest("UPLOAD_RESUME", token, file.getName(), encoded);
+            if (!r.success) throw new Exception(r.payload);
+            JOptionPane.showMessageDialog(this, "Resume uploaded.");
+            loadResumeStatus();
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Unable to upload resume: " + e.getMessage()
+                    + "\n(This action needs the UPLOAD_RESUME command, which the server may not support yet.)");
+        }
+    }
+
+    private void downloadResume() {
+        try {
+            SocketClient.Response r = client.sendRequest("GET_RESUME", token);
+            if (!r.success) throw new Exception(r.payload);
+            String[] x = r.payload.split("\\|", -1);
+            if (x.length < 2) throw new Exception("No resume on file.");
+            String filename = x[0];
+            byte[] bytes = Base64.getDecoder().decode(x[1]);
+            JFileChooser chooser = new JFileChooser();
+            chooser.setSelectedFile(new File(filename));
+            if (chooser.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) return;
+            Files.write(chooser.getSelectedFile().toPath(), bytes);
+            JOptionPane.showMessageDialog(this, "Resume saved.");
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Unable to download resume: " + e.getMessage()
+                    + "\n(This action needs the GET_RESUME command, which the server may not support yet.)");
+        }
+    }
+
+    // =========================================================
+    // SHARED
+    // =========================================================
+
+    private void refresh() {
+        loadProfile();
+        loadJobs();
+        loadApps();
+        loadNotes();
+    }
+
+    private void logout() {
+        try { if (token != null) client.sendRequest("LOGOUT", token); } catch (Exception ignored) {}
+        dispose();
+        new LoginFrame().setVisible(true);
+    }
+
+    private static double parseD(String s) { try { return Double.parseDouble(s); } catch (Exception e) { return -1; } }
+    private static int parseI(String s) { try { return Integer.parseInt(s); } catch (Exception e) { return 0; } }
+
+    /** Sort key for "soonest deadline first": unparsable/blank deadlines sort last. */
+    private static String deadlineRank(String value) {
+        if (value == null || value.isBlank()) return "9999-99-99";
+        try { return LocalDate.parse(value.length() >= 10 ? value.substring(0, 10) : value).toString(); }
+        catch (Exception e) { return "9999-99-99"; }
+    }
+
+    private static String formatDeadline(String value) {
+        if (value == null || value.isBlank()) return "-";
+        try {
+            LocalDate d = LocalDate.parse(value.length() >= 10 ? value.substring(0, 10) : value);
+            long days = ChronoUnit.DAYS.between(LocalDate.now(), d);
+            if (days == 0) return "Due today";
+            if (days == 1) return "1 day left";
+            if (days > 1) return days + " days left";
+            long late = Math.abs(days);
+            return late == 1 ? "Expired 1 day ago" : "Expired " + late + " days ago";
+        } catch (Exception e) { return value; }
+    }
+
+    private static JPanel page() {
+        JPanel p = new JPanel(new BorderLayout(0, 12));
+        p.setBackground(BG());
+        p.setBorder(new EmptyBorder(20, 20, 20, 20));
+        return p;
+    }
+
+    private static Color BG() { return new Color(247, 248, 245); }
+    private static Color DARK() { return new Color(20, 92, 48); }
+    private static Color TEXT() { return new Color(38, 50, 43); }
+    private static Color MUTED() { return new Color(105, 115, 108); }
+
+    private static JLabel lbl(String s, int z, boolean b, Color c) {
+        JLabel l = new JLabel(s);
+        l.setFont(new Font("SansSerif", b ? Font.BOLD : Font.PLAIN, z));
+        l.setForeground(c);
+        return l;
+    }
+
+    private static JButton btn(String s) {
+        JButton b = new JButton(s);
+        b.setFocusPainted(false);
+        b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         return b;
     }
 
-    // ================= RENDERERS =================
+    private static JComboBox<String> box(String... items) { return new JComboBox<>(items); }
 
-    private static class EligibilityRenderer extends DefaultTableCellRenderer {
-        @Override
-        public Component getTableCellRendererComponent(JTable table, Object value, boolean selected,
-                                                        boolean focused, int row, int column) {
-            JLabel label = (JLabel) super.getTableCellRendererComponent(table, value, selected, focused, row, column);
-            label.setHorizontalAlignment(SwingConstants.CENTER);
-            label.setFont(new Font("SansSerif", Font.BOLD, 12));
-            if ("Eligible".equals(value)) {
-                label.setForeground(SUCCESS);
-            } else {
-                label.setForeground(DANGER);
-            }
-            return label;
-        }
+    private static DefaultTableModel model(String[] c) {
+        return new DefaultTableModel(c, 0) { public boolean isCellEditable(int r, int c) { return false; } };
     }
 
-    private static class StatusRenderer extends DefaultTableCellRenderer {
-        @Override
-        public Component getTableCellRendererComponent(JTable table, Object value, boolean selected,
-                                                        boolean focused, int row, int column) {
-            JLabel label = (JLabel) super.getTableCellRendererComponent(table, value, selected, focused, row, column);
-            label.setFont(new Font("SansSerif", Font.BOLD, 12));
-            String status = String.valueOf(value);
-            if (status.contains("Shortlisted")) {
-                label.setForeground(SUCCESS);
-            } else if (status.contains("Pending")) {
-                label.setForeground(WARNING);
-            } else if (status.contains("Rejected")) {
-                label.setForeground(DANGER);
-            } else {
-                label.setForeground(TEXT);
-            }
-            return label;
-        }
-    }
-
-    private static class ActionTextRenderer extends DefaultTableCellRenderer {
-        @Override
-        public Component getTableCellRendererComponent(JTable table, Object value, boolean selected,
-                                                        boolean focused, int row, int column) {
-            JLabel label = (JLabel) super.getTableCellRendererComponent(table, value, selected, focused, row, column);
-            label.setForeground(PRIMARY_GREEN);
-            label.setFont(new Font("SansSerif", Font.BOLD, 12));
-            label.setHorizontalAlignment(SwingConstants.CENTER);
-            return label;
-        }
-    }
-
-    private static class CompoundBorder2 implements javax.swing.border.Border {
-        private final Border line = BorderFactory.createMatteBorder(0, 0, 1, 0, BORDER);
-        private final Border pad = new EmptyBorder(10, 6, 10, 6);
-
-        @Override public Insets getBorderInsets(Component c) {
-            Insets a = line.getBorderInsets(c);
-            Insets b = pad.getBorderInsets(c);
-            return new Insets(a.top + b.top, a.left + b.left, a.bottom + b.bottom, a.right + b.right);
-        }
-        @Override public boolean isBorderOpaque() { return true; }
-        @Override public void paintBorder(Component c, Graphics g, int x, int y, int width, int height) {
-            pad.paintBorder(c, g, x, y, width, height);
-            line.paintBorder(c, g, x, y, width, height);
-        }
-    }
-
-    // ================= MOCK DATA =================
-    // =========================================================
-    //
-    // ---------------------------------------------------------
-    // This method contains sample frontend data used only for
-    // testing the Student Dashboard UI.
-    // Replace this method with backend/server calls when the
-    // database and APIs are integrated.
-    //
-    // DO NOT add real student/job data here.
-    // =========================================================
-
-    private void loadMockData() {
-        drives.add(new Drive("Infosys", "Software Engineer", "Placement", "6.5 LPA", 7.50, 0, "12 Sep 2026", true));
-        drives.add(new Drive("TCS", "Graduate Engineer", "Placement", "7.2 LPA", 7.00, 1, "15 Sep 2026", true));
-        drives.add(new Drive("Deloitte", "Analyst", "Placement", "8.0 LPA", 8.50, 0, "18 Sep 2026", false));
-        drives.add(new Drive("Accenture", "Associate", "Placement", "6.0 LPA", 7.20, 0, "20 Sep 2026", true));
-        drives.add(new Drive("Capgemini", "Intern", "Internship", "25K / month", 7.00, 1, "23 Sep 2026", true));
-
-        applications.add(new Application("Infosys", "Software Engineer", "08 Sep 2026", "GD", "Shortlisted"));
-        applications.add(new Application("Deloitte", "Analyst", "06 Sep 2026", "Interview", "Shortlisted"));
-        applications.add(new Application("TCS", "Graduate Engineer", "02 Sep 2026", "Final Result", "Pending"));
-        applications.add(new Application("Wipro", "Project Engineer", "30 Aug 2026", "Technical Interview", "Pending"));
-
-        notices.add(new Notice("Eligibility Update", "You are eligible for Infosys Software Engineer.", "Today"));
-        notices.add(new Notice("Deadline Reminder", "TCS application deadline is in 5 days.", "Today"));
-        notices.add(new Notice("Shortlisted", "You have been shortlisted for Deloitte interview.", "08 Sep"));
-        notices.add(new Notice("Resume", "Keep your latest resume ready before applying.", "07 Sep"));
-    }
-
-    private static class Drive {
-        String company, role, type, packageText, deadline;
-        double minCgpa;
-        int maxBacklogs;
-        boolean eligible;
-
-        Drive(String company, String role, String type, String packageText,
-              double minCgpa, int maxBacklogs, String deadline, boolean eligible) {
-            this.company = company;
-            this.role = role;
-            this.type = type;
-            this.packageText = packageText;
-            this.minCgpa = minCgpa;
-            this.maxBacklogs = maxBacklogs;
-            this.deadline = deadline;
-            this.eligible = eligible;
-        }
-    }
-
-    private static class Application {
-        String company, role, appliedOn, stage, status;
-
-        Application(String company, String role, String appliedOn, String stage, String status) {
-            this.company = company;
-            this.role = role;
-            this.appliedOn = appliedOn;
-            this.stage = stage;
-            this.status = status;
-        }
-    }
-
-    private static class Notice {
-        String title, body, date;
-
-        Notice(String title, String body, String date) {
-            this.title = title;
-            this.body = body;
-            this.date = date;
-        }
-    }
-
-    private static String escapeHtml(String text) {
-        return text.replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-                .replace("\"", "&quot;");
-    }
-
-    public static void main(String[] args) {
-        SwingUtilities.invokeLater(() -> new StudentDashboard().setVisible(true));
+    private static void style(JTable t) {
+        t.setRowHeight(30);
+        t.setAutoCreateRowSorter(true);
+        t.setFillsViewportHeight(true);
+        t.setShowGrid(true);
+        t.setGridColor(new Color(205, 212, 207));
+        t.setIntercellSpacing(new Dimension(1, 1));
+        t.setSelectionBackground(new Color(205, 224, 211));
+        t.setSelectionForeground(TEXT());
+        DefaultTableCellRenderer center = new DefaultTableCellRenderer();
+        center.setHorizontalAlignment(SwingConstants.CENTER);
+        t.setDefaultRenderer(Object.class, center);
+        JTableHeader h = t.getTableHeader();
+        h.setReorderingAllowed(false);
+        h.setPreferredSize(new Dimension(h.getPreferredSize().width, 32));
+        h.setDefaultRenderer(new DefaultTableCellRenderer() {{
+            setHorizontalAlignment(SwingConstants.CENTER);
+            setOpaque(true);
+            setBackground(new Color(232, 238, 234));
+            setForeground(new Color(38, 50, 43));
+            setBorder(BorderFactory.createMatteBorder(0, 0, 1, 1, new Color(170, 180, 173)));
+        }});
     }
 }
