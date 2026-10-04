@@ -79,20 +79,23 @@ public class TPCDashboard extends JFrame {
     private JLabel statPendingValue;
     private JLabel statSentValue;
 
-    public TPCDashboard(String tpcName) {
-        this.tpcName = (tpcName == null || tpcName.isBlank()) ? "TPC" : tpcName;
+    private final String sessionToken;
 
-        setTitle("Placement Eligibility Portal - TPC Dashboard");
-        setSize(1100, 650);
-        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setLocationRelativeTo(null);
-        setResizable(false);
+public TPCDashboard(String tpcName, String sessionToken) {
+    this.tpcName = (tpcName == null || tpcName.isBlank()) ? "TPC" : tpcName;
+    this.sessionToken = sessionToken;
 
-        loadMockJobs();
-        loadMockStudents();
+    setTitle("Placement Eligibility Portal - TPC Dashboard");
+    setSize(1100, 650);
+    setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+    setLocationRelativeTo(null);
+    setResizable(false);
 
-        initComponents();
-    }
+    loadMockJobs();
+    loadMockStudents();
+
+    initComponents();
+}
 
     // ------------------------------------------------------------------
     // UI setup
@@ -589,7 +592,7 @@ public class TPCDashboard extends JFrame {
                 "Confirm logout", JOptionPane.YES_NO_OPTION);
         if (choice == JOptionPane.YES_OPTION) {
             dispose();
-            SwingUtilities.invokeLater(() -> new LoginForm().setVisible(true));
+            SwingUtilities.invokeLater(() -> new LoginFrame().setVisible(true));
         }
     }
 
@@ -647,7 +650,9 @@ public class TPCDashboard extends JFrame {
     // Standalone launch (for testing this screen without going through login)
     // ------------------------------------------------------------------
 
-    public static void main(String[] args) {
-        SwingUtilities.invokeLater(() -> new TPCDashboard("TPC").setVisible(true));
-    }
+   public static void main(String[] args) {
+    SwingUtilities.invokeLater(() ->
+        new TPCDashboard("TPC", null).setVisible(true)
+    );
+}
 }
