@@ -10,7 +10,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import com.placement.sockets.SocketClient;
 
 /**
  * TPC Dashboard
@@ -26,13 +25,17 @@ import com.placement.sockets.SocketClient;
  * Theme is copied 1:1 from LoginForm.java (same colors, fonts, spacing)
  * so the dashboard feels like part of the same app.
  *
- * Job postings, students, and notifications are loaded through the TCP
- * server when an authenticated session is supplied. A small fallback data set
- * keeps the screen previewable when it is launched standalone.
+ * NOTE ON DATA: Job postings and student records below are MOCK DATA
+ * (loadMockJobs / loadMockStudents) so the UI is runnable and testable
+ * on its own. Replace those two methods with your Socket calls to the
+ * server (same pattern as LoginForm's handleLogin -> Socket to
+ * localhost:5000) once the backend endpoints for "GET_JOBS",
+ * "GET_STUDENTS" and "SEND_NOTIFICATION" are ready. The places to
+ * change are clearly marked with "// TODO: replace with server call".
  */
 public class TPCDashboard extends JFrame {
 
-    // ---- shared placement portal theme ----
+    // ---- theme (copied from LoginForm) ----
     private static final Color SIDEBAR_GREEN = new Color(20, 83, 45);
     private static final Color BG_GRAY = new Color(243, 244, 246);
     private static final Color TEXT_GRAY = Color.GRAY;
@@ -40,9 +43,8 @@ public class TPCDashboard extends JFrame {
     private static final Font FONT_LABEL = new Font("SansSerif", Font.BOLD, 12);
     private static final Font FONT_BODY = new Font("SansSerif", Font.PLAIN, 13);
 
-    // the logged-in TPC user
+    // the logged-in TPC user (passed in from LoginForm after a successful login)
     private final String tpcName;
-    private final String sessionToken;
 
     // main content area, swapped via CardLayout
     private final CardLayout cardLayout = new CardLayout();
@@ -77,25 +79,23 @@ public class TPCDashboard extends JFrame {
     private JLabel statPendingValue;
     private JLabel statSentValue;
 
-    public TPCDashboard(String tpcName) {
-        this(tpcName, null);
-    }
+    private final String sessionToken;
 
-    public TPCDashboard(String tpcName, String sessionToken) {
-        this.tpcName = (tpcName == null || tpcName.isBlank()) ? "TPC" : tpcName;
-        this.sessionToken = sessionToken;
+public TPCDashboard(String tpcName, String sessionToken) {
+    this.tpcName = (tpcName == null || tpcName.isBlank()) ? "TPC" : tpcName;
+    this.sessionToken = sessionToken;
 
-        setTitle("Placement Eligibility Portal - TPC Dashboard");
-        setSize(1100, 650);
-        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setLocationRelativeTo(null);
-        setResizable(false);
+    setTitle("Placement Eligibility Portal - TPC Dashboard");
+    setSize(1100, 650);
+    setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+    setLocationRelativeTo(null);
+    setResizable(false);
 
-        loadJobsFromServer();
-        loadStudentsFromServer();
+    loadMockJobs();
+    loadMockStudents();
 
-        initComponents();
-    }
+    initComponents();
+}
 
     // ------------------------------------------------------------------
     // UI setup
@@ -490,6 +490,11 @@ public class TPCDashboard extends JFrame {
             return;
         }
 
+        // TODO: replace with server call, e.g.:
+        // Socket socket = new Socket("localhost", 5000);
+        // writer.println("SEND_NOTIFICATION");
+        // writer.println(currentJob.id);
+        // writer.println(String.join(",", selectedPrns));
         boolean sentOk = sendNotificationToServer(currentJob, selectedPrns);
 
         if (sentOk) {
@@ -552,56 +557,34 @@ public class TPCDashboard extends JFrame {
     }
 
     // ------------------------------------------------------------------
-    // TCP server integration
+    // Server integration stubs -- swap these for real Socket calls
     // ------------------------------------------------------------------
 
-    private void loadJobsFromServer() {
-        jobPostings.clear();
-        try {
-            SocketClient.ListResponse response = new SocketClient().sendListRequest("GET_JOBS");
-            if (!response.success) throw new IllegalStateException(response.errorMessage);
-            for (String line : response.lines) {
-                String[] p = line.split("\\|", -1);
-                if (p.length < 8) continue;
-                jobPostings.add(new JobPosting(p[0], p[1], p[2], p[3],
-                        Double.parseDouble(p[4]), List.of(p[5].split(",")), Integer.parseInt(p[6]), p[p.length - 1]));
-            }
-        } catch (Exception e) {
-            // Keep a deterministic fallback for opening the UI without a server.
-            jobPostings.add(new JobPosting("JOB001", "TCS", "Software Engineer", "6 LPA",
-                    7.5, List.of("CSE", "IT"), 0, "2026-09-15"));
-        }
+    private void loadMockJobs() {
+        // TODO: replace with server call, e.g.:
+        // writer.println("GET_JOBS");  then parse the response lines into JobPosting objects.
+        jobPostings.add(new JobPosting("JOB001", "Infosys", "Systems Engineer", "3.6 LPA",
+                6.5, List.of("CSE", "IT", "ENTC"), 0, "2026-09-20"));
+        jobPostings.add(new JobPosting("JOB002", "TCS", "Assistant System Engineer", "3.36 LPA",
+                6.0, List.of("CSE", "IT", "ENTC", "MECH"), 1, "2026-09-25"));
+        jobPostings.add(new JobPosting("JOB003", "Amazon", "SDE Intern", "50000/month",
+                8.0, List.of("CSE", "IT"), 0, "2026-09-18"));
     }
 
-    private void loadStudentsFromServer() {
-        allStudents.clear();
-        try {
-            if (sessionToken == null) throw new IllegalStateException("No authenticated session.");
-            SocketClient.ListResponse response = new SocketClient().sendListRequest("GET_STUDENTS", sessionToken);
-            if (!response.success) throw new IllegalStateException(response.errorMessage);
-            for (String line : response.lines) {
-                String[] p = line.split("\\|", -1);
-                if (p.length < 10) continue;
-                allStudents.add(new Student(p[0], p[1], p[3], p[3],
-                        Double.parseDouble(p[4]), Integer.parseInt(p[6])));
-            }
-        } catch (Exception e) {
-            allStudents.add(new Student("PRN001", "Aarav Sharma", "B.Tech CSE", "CSE", 8.5, 0));
-            allStudents.add(new Student("PRN002", "Priya Patil", "B.Tech IT", "IT", 7.8, 0));
-        }
+    private void loadMockStudents() {
+        // TODO: replace with server call, e.g.: writer.println("GET_STUDENTS");
+        allStudents.add(new Student("PRN001", "Aarav Sharma", "B.Tech CSE", "CSE", 8.4, 0));
+        allStudents.add(new Student("PRN002", "Isha Patil", "B.Tech IT", "IT", 7.1, 1));
+        allStudents.add(new Student("PRN003", "Rohan Deshmukh", "B.Tech ENTC", "ENTC", 6.8, 0));
+        allStudents.add(new Student("PRN004", "Sneha Kulkarni", "B.Tech CSE", "CSE", 9.0, 0));
+        allStudents.add(new Student("PRN005", "Vikram Joshi", "B.Tech MECH", "MECH", 6.2, 2));
+        allStudents.add(new Student("PRN006", "Priya Nair", "B.Tech IT", "IT", 6.6, 0));
+        allStudents.add(new Student("PRN007", "Aditya Rao", "B.Tech CSE", "CSE", 7.9, 1));
     }
 
+    /** Placeholder that always "succeeds" locally. Replace with a real Socket call. */
     private boolean sendNotificationToServer(JobPosting job, List<String> studentPrns) {
-        if (sessionToken == null) return false;
-        try {
-            SocketClient.Response response = new SocketClient().sendRequest(
-                    "SEND_NOTIFICATION", sessionToken, job.id, String.join(",", studentPrns));
-            return response.success;
-        } catch (Exception e) {
-            JOptionPane.showMessageDialog(this, "Server error: " + e.getMessage(),
-                    "Notification error", JOptionPane.ERROR_MESSAGE);
-            return false;
-        }
+        return true;
     }
 
     private void handleLogout() {
@@ -667,7 +650,9 @@ public class TPCDashboard extends JFrame {
     // Standalone launch (for testing this screen without going through login)
     // ------------------------------------------------------------------
 
-    public static void main(String[] args) {
-        SwingUtilities.invokeLater(() -> new TPCDashboard("Demo TPC").setVisible(true));
-    }
+   public static void main(String[] args) {
+    SwingUtilities.invokeLater(() ->
+        new TPCDashboard("TPC", null).setVisible(true)
+    );
+}
 }

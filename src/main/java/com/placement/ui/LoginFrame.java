@@ -658,7 +658,8 @@ public class LoginFrame extends JFrame {
             case "DIRECTOR" -> dashboard = new DirectorDashboard(authenticatedDisplayName, sessionToken);
             case "DEAN" -> dashboard = new DeanDashboard(authenticatedDisplayName, sessionToken);
             case "STUDENT" -> dashboard = new StudentDashboard(authenticatedDisplayName, username, sessionToken);
-            case "ADMIN" -> dashboard = new AdminDashboard(authenticatedDisplayName, sessionToken);
+            case "ADMIN" -> dashboard =
+        new AdminDashboard();
             default -> {
                 showError("Unsupported role: " + role);
                 return;
