@@ -30,11 +30,8 @@ import java.util.function.Consumer;
  * Student-facing dashboard. Uses the application's existing Swing visual style
  * and only displays records returned by the existing server/session.
  *
- * Current server commands used here:
- * GET_JOBS, APPLY_JOB, GET_MY_APPLICATIONS, GET_NOTIFICATIONS, LOGOUT.
- * Resume commands are included in the ATS page but may return the server's
- * actual unsupported-command response if ResumeCommandHandler is not routed
- * by the running server. No result is fabricated in that case.
+ * Uses existing placement/application commands and the resume commands routed
+ * by the matching backend version. ATS values are rendered only from server responses.
  */
 public class StudentDashboard extends JFrame {
     private static final Color BACKGROUND = new Color(247, 248, 245);
@@ -78,9 +75,20 @@ public class StudentDashboard extends JFrame {
     private JLabel atsScoreValue;
     private JLabel atsFeedbackStatus;
     private JTextArea atsFeedbackArea;
+    private JLabel selectedResumeLabel;
+    private JButton uploadResumeButton;
+    private JButton getFeedbackButton;
+    private File selectedResumeFile;
+    private boolean resumeUploadedThisSession;
     private JTextArea jobScreeningArea;
+    private ScoreGauge atsGauge;
+    private ScoreGauge jobGauge;
+    private ScoreBreakdownPanel scoreBreakdownPanel;
+    private SkillListPanel matchedSkillsPanel;
+    private SkillListPanel missingSkillsPanel;
     private JComboBox<JobOption> screeningJobBox;
     private JPanel reportsSummaryCards;
+    private StatusChartPanel overviewStatusChart;
 
     public StudentDashboard(String name, String email, String token) {
         this.name = name == null || name.isBlank() ? "Student" : name;
@@ -204,12 +212,14 @@ public class StudentDashboard extends JFrame {
         cards.add(metricCard("My Applications", overviewApplicationsValue));
         center.add(cards, BorderLayout.NORTH);
 
-        JPanel lower = new JPanel(new GridLayout(1, 2, 14, 0));
+        JPanel lower = new JPanel(new BorderLayout());
         lower.setOpaque(false);
-        lower.add(infoCard("Placement Overview",
-                "Placement opportunities and application information are loaded from the existing server."));
-        lower.add(infoCard("Quick Guide",
-                "Use Placement Drives to explore jobs, My Applications to track submitted applications, and ATS Screening to review screening availability and reports when supported by the running server."));
+        JPanel chartCard = whiteCard();
+        chartCard.setLayout(new BorderLayout(0, 8));
+        chartCard.add(label("Application Status Overview", 16, true, GREEN), BorderLayout.NORTH);
+        overviewStatusChart = new StatusChartPanel();
+        chartCard.add(overviewStatusChart, BorderLayout.CENTER);
+        lower.add(chartCard, BorderLayout.CENTER);
         center.add(lower, BorderLayout.CENTER);
         page.add(center, BorderLayout.CENTER);
         overviewStatus = label("Loading live data…", 12, false, MUTED);
@@ -271,55 +281,139 @@ public class StudentDashboard extends JFrame {
         JPanel titles = verticalGroup();
         titles.add(label("ATS Screening", 24, true, TEXT));
         titles.add(Box.createVerticalStrut(4));
-        titles.add(label("Resume feedback and job-specific screening reports", 13, false, MUTED));
+        titles.add(label("Review your resume and compare it with a placement drive", 13, false, MUTED));
         heading.add(titles, BorderLayout.WEST);
-        JButton feedback = button("Get ATS Feedback");
+        JButton feedback = button("Refresh ATS Feedback");
         feedback.addActionListener(e -> loadAtsFeedback());
         heading.add(feedback, BorderLayout.EAST);
         page.add(heading, BorderLayout.NORTH);
 
-        JPanel body = new JPanel(new GridLayout(2, 1, 0, 14));
+        JPanel body = new JPanel(new GridLayout(2, 1, 0, 12));
         body.setOpaque(false);
 
+        // Overall report: values are populated only from GET_ATS_FEEDBACK.
         JPanel overall = whiteCard();
         overall.setLayout(new BorderLayout(0, 10));
-        overall.add(label("Overall Resume ATS Report", 16, true, GREEN), BorderLayout.NORTH);
-        JPanel overallContent = new JPanel(new BorderLayout(12, 8));
+        overall.add(label("Overall Resume Report", 16, true, GREEN), BorderLayout.NORTH);
+        JPanel overallContent = new JPanel(new BorderLayout(0, 8));
         overallContent.setOpaque(false);
-        atsScoreValue = label("Score: —", 20, true, TEXT);
-        overallContent.add(atsScoreValue, BorderLayout.NORTH);
-        atsFeedbackArea = reportTextArea();
-        overallContent.add(new JScrollPane(atsFeedbackArea), BorderLayout.CENTER);
+
+        JPanel uploadSection = new JPanel();
+        uploadSection.setOpaque(false);
+        uploadSection.setLayout(new BoxLayout(uploadSection, BoxLayout.Y_AXIS));
+        JPanel uploadTitle = new JPanel(new BorderLayout(10, 0));
+        uploadTitle.setOpaque(false);
+        JPanel uploadText = verticalGroup();
+        uploadText.add(label("My Resume", 14, true, TEXT));
+        uploadText.add(label("Choose a resume file, review it, then upload it for screening.", 12, false, MUTED));
+        uploadTitle.add(uploadText, BorderLayout.CENTER);
+        uploadSection.add(uploadTitle);
+        uploadSection.add(Box.createVerticalStrut(10));
+        JPanel chooseCard = new JPanel(new BorderLayout(12, 0));
+        chooseCard.setOpaque(true);
+        chooseCard.setBackground(new Color(248, 252, 249));
+        chooseCard.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createDashedBorder(new Color(90, 155, 112), 1.4f, 5f, 3f, true),
+                new EmptyBorder(13, 14, 13, 14)));
+        JLabel uploadIcon = label("↑", 28, true, GREEN);
+        uploadIcon.setHorizontalAlignment(SwingConstants.CENTER);
+        uploadIcon.setPreferredSize(new Dimension(42, 42));
+        chooseCard.add(uploadIcon, BorderLayout.WEST);
+        JPanel chooseText = verticalGroup();
+        chooseText.add(label("Choose your resume file", 14, true, TEXT));
+        chooseText.add(Box.createVerticalStrut(3));
+        chooseText.add(label("PDF, DOCX or TXT · Maximum 2 MB", 12, false, MUTED));
+        chooseCard.add(chooseText, BorderLayout.CENTER);
+        JButton chooseFileButton = button("Choose File");
+        chooseFileButton.addActionListener(e -> chooseResumeFile());
+        chooseCard.add(chooseFileButton, BorderLayout.EAST);
+        uploadSection.add(chooseCard);
+        uploadSection.add(Box.createVerticalStrut(10));
+        selectedResumeLabel = label("No file selected", 12, false, MUTED);
+        selectedResumeLabel.setBorder(new EmptyBorder(5, 2, 5, 2));
+        uploadSection.add(selectedResumeLabel);
+        uploadSection.add(Box.createVerticalStrut(7));
         JPanel uploadActions = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         uploadActions.setOpaque(false);
-        JButton upload = button("Upload / Replace Resume");
-        upload.addActionListener(e -> uploadResume());
-        uploadActions.add(upload);
-        overallContent.add(uploadActions, BorderLayout.SOUTH);
+        uploadResumeButton = button("Upload Resume");
+        uploadResumeButton.setEnabled(false);
+        uploadResumeButton.addActionListener(e -> sendSelectedResume());
+        getFeedbackButton = button("Get ATS Feedback");
+        getFeedbackButton.setEnabled(false);
+        getFeedbackButton.addActionListener(e -> loadAtsFeedback());
+        JButton removeFileButton = button("Remove");
+        removeFileButton.addActionListener(e -> clearSelectedResume());
+        uploadActions.add(uploadResumeButton);
+        uploadActions.add(getFeedbackButton);
+        uploadActions.add(removeFileButton);
+        uploadSection.add(uploadActions);
+        uploadSection.add(Box.createVerticalStrut(5));
+        uploadSection.add(label("Upload your resume first to enable ATS feedback.", 11, false, MUTED));
+        overallContent.add(uploadSection, BorderLayout.NORTH);
+
+        JPanel overallResults = new JPanel(new BorderLayout(12, 8));
+        overallResults.setOpaque(false);
+        atsGauge = new ScoreGauge(GREEN, "ATS Score");
+        overallResults.add(atsGauge, BorderLayout.WEST);
+        JPanel reportColumn = new JPanel(new BorderLayout(0, 6));
+        reportColumn.setOpaque(false);
+        atsScoreValue = label("ATS Score: —", 16, true, TEXT);
+        reportColumn.add(atsScoreValue, BorderLayout.NORTH);
+        atsFeedbackArea = reportTextArea();
+        atsFeedbackArea.setRows(5);
+        atsFeedbackArea.setText("Upload your resume, then select Get Feedback to request the current server report.");
+        reportColumn.add(new JScrollPane(atsFeedbackArea), BorderLayout.CENTER);
+        overallResults.add(reportColumn, BorderLayout.CENTER);
+        overallContent.add(overallResults, BorderLayout.CENTER);
         overall.add(overallContent, BorderLayout.CENTER);
         body.add(overall);
 
+        // Job-specific report: only real jobs from GET_JOBS are selectable.
         JPanel jobSpecific = whiteCard();
         jobSpecific.setLayout(new BorderLayout(0, 10));
-        jobSpecific.add(label("Job-Specific Screening Report", 16, true, GREEN), BorderLayout.NORTH);
+        jobSpecific.add(label("Job-Specific Screening", 16, true, GREEN), BorderLayout.NORTH);
+        JPanel jobContent = new JPanel(new BorderLayout(0, 8));
+        jobContent.setOpaque(false);
         JPanel controls = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         controls.setOpaque(false);
         screeningJobBox = new JComboBox<>();
-        screeningJobBox.setPreferredSize(new Dimension(360, 28));
+        screeningJobBox.setPreferredSize(new Dimension(330, 28));
         JButton screen = button("Screen My Resume");
         screen.addActionListener(e -> screenAgainstSelectedJob());
-        JButton refreshJobs = button("Refresh Jobs");
+        JButton refreshJobs = button("Refresh Drives");
         refreshJobs.addActionListener(e -> loadJobs());
-        controls.add(label("Placement", 12, false, TEXT));
+        controls.add(label("Placement drive", 12, false, TEXT));
         controls.add(screeningJobBox);
         controls.add(screen);
         controls.add(refreshJobs);
-        jobSpecific.add(controls, BorderLayout.NORTH);
+        jobContent.add(controls, BorderLayout.NORTH);
+        JPanel screeningResults = new JPanel(new BorderLayout(0, 8));
+        screeningResults.setOpaque(false);
+        JPanel scoreHeader = new JPanel(new BorderLayout(10, 0));
+        scoreHeader.setOpaque(false);
+        jobGauge = new ScoreGauge(new Color(37, 99, 235), "Match Score");
+        scoreHeader.add(jobGauge, BorderLayout.WEST);
+        scoreBreakdownPanel = new ScoreBreakdownPanel();
+        scoreHeader.add(scoreBreakdownPanel, BorderLayout.CENTER);
+        screeningResults.add(scoreHeader, BorderLayout.NORTH);
+        JPanel skills = new JPanel(new GridLayout(1, 2, 8, 0));
+        skills.setOpaque(false);
+        matchedSkillsPanel = new SkillListPanel("Matched Skills", new Color(34, 139, 74));
+        missingSkillsPanel = new SkillListPanel("Missing Skills", new Color(190, 55, 55));
+        skills.add(matchedSkillsPanel); skills.add(missingSkillsPanel);
+        screeningResults.add(skills, BorderLayout.CENTER);
         jobScreeningArea = reportTextArea();
-        jobSpecific.add(new JScrollPane(jobScreeningArea), BorderLayout.CENTER);
+        jobScreeningArea.setRows(3);
+        jobScreeningArea.setText("Choose a placement drive and select Screen My Resume to view the server's comparison.");
+        JScrollPane detailsScroll = new JScrollPane(jobScreeningArea);
+        detailsScroll.setPreferredSize(new Dimension(500, 95));
+        screeningResults.add(detailsScroll, BorderLayout.SOUTH);
+        jobContent.add(screeningResults, BorderLayout.CENTER);
+        jobSpecific.add(jobContent, BorderLayout.CENTER);
         body.add(jobSpecific);
+
         page.add(body, BorderLayout.CENTER);
-        atsFeedbackStatus = label("ATS results appear only when the running server returns them.", 11, false, MUTED);
+        atsFeedbackStatus = label("Scores and feedback are shown only when returned by the server.", 11, false, MUTED);
         page.add(atsFeedbackStatus, BorderLayout.SOUTH);
         return page;
     }
@@ -566,9 +660,12 @@ public class StudentDashboard extends JFrame {
 
     private void loadAtsFeedback() {
         if (!hasSession()) { setStatus(atsFeedbackStatus, "No authenticated session is available."); return; }
+        if (!resumeUploadedThisSession) {
+            setStatus(atsFeedbackStatus, "Upload a resume successfully before requesting ATS feedback.");
+            return;
+        }
         setStatus(atsFeedbackStatus, "Requesting ATS feedback from the server…");
-        atsScoreValue.setText("ATS Score: —");
-        atsFeedbackArea.setText("Waiting for a response from the server…");
+        clearOverallAtsResults("Waiting for fresh ATS feedback from the server…");
         async(() -> client.sendListRequest("GET_ATS_FEEDBACK", token), response -> {
             if (!response.success) {
                 String error = safe(response.errorMessage);
@@ -577,18 +674,33 @@ public class StudentDashboard extends JFrame {
                 }
                 setStatus(atsFeedbackStatus, "ATS feedback unavailable: " + error);
                 atsFeedbackArea.setText("The server did not return an ATS report.\n\n" + error);
+                atsGauge.setScore(null);
                 return;
             }
             StringBuilder report = new StringBuilder();
+            Map<String, List<String>> grouped = new LinkedHashMap<>();
             for (String line : response.lines) {
                 if (line == null) continue;
                 int separator = line.indexOf('|');
-                String key = separator >= 0 ? line.substring(0, separator) : "Result";
-                String value = separator >= 0 ? line.substring(separator + 1) : line;
-                if (key.equalsIgnoreCase("SCORE")) atsScoreValue.setText("ATS Score: " + value);
-                else report.append(key).append(": ").append(value).append('\n');
+                String key = separator >= 0 ? line.substring(0, separator).trim().toUpperCase(java.util.Locale.ROOT) : "RESULT";
+                String value = separator >= 0 ? line.substring(separator + 1).trim() : line.trim();
+                if (key.equals("SCORE")) {
+                    atsScoreValue.setText("ATS Score: " + value);
+                    atsGauge.setScore(parseScore(value));
+                } else {
+                    grouped.computeIfAbsent(key, ignored -> new ArrayList<>()).add(value);
+                }
             }
-            atsFeedbackArea.setText(report.toString().isBlank() ? "No additional feedback was returned." : report.toString());
+            Map<String, String> headings = Map.of(
+                    "POSITIVE", "Positive findings",
+                    "WARNING", "Warnings",
+                    "SUGGESTION", "Suggestions");
+            for (Map.Entry<String, List<String>> entry : grouped.entrySet()) {
+                report.append(headings.getOrDefault(entry.getKey(), entry.getKey())).append('\n');
+                for (String value : entry.getValue()) report.append("  • ").append(value).append('\n');
+                report.append('\n');
+            }
+            atsFeedbackArea.setText(report.toString().isBlank() ? "No additional feedback was returned." : report.toString().trim());
             setStatus(atsFeedbackStatus, "ATS feedback loaded from the server.");
         }, error -> {
             setStatus(atsFeedbackStatus, "ATS feedback unavailable: " + error.getMessage());
@@ -596,32 +708,104 @@ public class StudentDashboard extends JFrame {
         });
     }
 
-    private void uploadResume() {
-        JFileChooser chooser = new JFileChooser();
-        chooser.setFileFilter(new FileNameExtensionFilter("Resume files (PDF, DOCX, TXT)", "pdf", "docx", "txt"));
-        if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return;
-        File file = chooser.getSelectedFile();
+    /** Opens the operating system's native file browser instead of Swing JFileChooser. */
+    private void chooseResumeFile() {
+        FileDialog dialog = new FileDialog(this, "Select Resume File", FileDialog.LOAD);
+        dialog.setFilenameFilter((dir, name) -> {
+            String lower = name.toLowerCase(java.util.Locale.ROOT);
+            return lower.endsWith(".pdf") || lower.endsWith(".docx") || lower.endsWith(".txt");
+        });
+        dialog.setVisible(true);
+        String fileName = dialog.getFile();
+        String directory = dialog.getDirectory();
+        if (fileName == null || directory == null) return;
+        File file = new File(directory, fileName);
+        String lower = file.getName().toLowerCase(java.util.Locale.ROOT);
+        if (!(lower.endsWith(".pdf") || lower.endsWith(".docx") || lower.endsWith(".txt"))) {
+            JOptionPane.showMessageDialog(this, "Choose a PDF, DOCX or TXT file.", "Unsupported File Type", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        if (!file.isFile()) {
+            JOptionPane.showMessageDialog(this, "The selected file could not be found.", "File Unavailable", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        long size = file.length();
+        if (size > 2L * 1024 * 1024) {
+            JOptionPane.showMessageDialog(this, "The selected file exceeds the 2 MB limit.", "File Too Large", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        selectedResumeFile = file;
+        resumeUploadedThisSession = false;
+        clearOverallAtsResults("A new resume is selected. Upload it to request fresh ATS feedback.");
+        clearJobScreeningResults("A new resume is selected. Run screening again to get updated job-specific results.");
+        selectedResumeLabel.setText("Selected: " + file.getName() + "  ·  " + formatFileSize(size));
+        selectedResumeLabel.setForeground(TEXT);
+        uploadResumeButton.setEnabled(true);
+        getFeedbackButton.setEnabled(false);
+        setStatus(atsFeedbackStatus, "Resume selected. Upload it before requesting ATS feedback.");
+    }
+
+    private String formatFileSize(long bytes) {
+        if (bytes < 1024) return bytes + " B";
+        if (bytes < 1024L * 1024) return String.format(java.util.Locale.ROOT, "%.1f KB", bytes / 1024.0);
+        return String.format(java.util.Locale.ROOT, "%.2f MB", bytes / (1024.0 * 1024.0));
+    }
+
+    private void clearSelectedResume() {
+        selectedResumeFile = null;
+        resumeUploadedThisSession = false;
+        clearOverallAtsResults("Choose and upload a resume to request ATS feedback.");
+        clearJobScreeningResults("Choose and upload a resume, then run screening for job-specific results.");
+        if (selectedResumeLabel != null) { selectedResumeLabel.setText("No file selected"); selectedResumeLabel.setForeground(MUTED); }
+        if (uploadResumeButton != null) uploadResumeButton.setEnabled(false);
+        if (getFeedbackButton != null) getFeedbackButton.setEnabled(false);
+        setStatus(atsFeedbackStatus, "Choose a resume file to begin.");
+    }
+
+    private void sendSelectedResume() {
+        if (!hasSession()) { setStatus(atsFeedbackStatus, "No authenticated session is available."); return; }
+        File file = selectedResumeFile;
+        if (file == null || !file.isFile()) { setStatus(atsFeedbackStatus, "Choose a valid resume file first."); return; }
         try {
             byte[] bytes = Files.readAllBytes(file.toPath());
-            if (bytes.length > 2 * 1024 * 1024) {
+            if (bytes.length > 2L * 1024 * 1024) {
                 JOptionPane.showMessageDialog(this, "The selected file exceeds the 2 MB limit.", "File Too Large", JOptionPane.WARNING_MESSAGE);
                 return;
             }
+            String lower = file.getName().toLowerCase(java.util.Locale.ROOT);
+            if (!(lower.endsWith(".pdf") || lower.endsWith(".docx") || lower.endsWith(".txt"))) {
+                JOptionPane.showMessageDialog(this, "Choose a PDF, DOCX or TXT file.", "Unsupported File Type", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
             String encoded = Base64.getEncoder().encodeToString(bytes);
-            setStatus(atsFeedbackStatus, "Uploading resume to the server…");
+            uploadResumeButton.setEnabled(false);
+            getFeedbackButton.setEnabled(false);
+            clearOverallAtsResults("Uploading a new resume. Waiting for the upload result…");
+            clearJobScreeningResults("Resume changed. Run screening again after upload succeeds.");
+            setStatus(atsFeedbackStatus, "Uploading " + file.getName() + "…");
             async(() -> client.sendRequest("UPLOAD_RESUME", token, file.getName(), encoded), response -> {
                 if (!response.success) {
+                    uploadResumeButton.setEnabled(selectedResumeFile != null);
+                    resumeUploadedThisSession = false;
+                    getFeedbackButton.setEnabled(false);
                     setStatus(atsFeedbackStatus, "Resume upload unavailable: " + safe(response.payload));
                     JOptionPane.showMessageDialog(this, safe(response.payload), "Resume Upload", JOptionPane.ERROR_MESSAGE);
                     return;
                 }
-                setStatus(atsFeedbackStatus, "Server response received for resume upload.");
-                JOptionPane.showMessageDialog(this, response.payload, "Resume Upload", JOptionPane.INFORMATION_MESSAGE);
+                resumeUploadedThisSession = true;
+                uploadResumeButton.setEnabled(selectedResumeFile != null);
+                getFeedbackButton.setEnabled(true);
+                setStatus(atsFeedbackStatus, "Resume uploaded. You can now request ATS feedback.");
+                JOptionPane.showMessageDialog(this, safe(response.payload), "Resume Upload", JOptionPane.INFORMATION_MESSAGE);
             }, error -> {
+                uploadResumeButton.setEnabled(selectedResumeFile != null);
+                resumeUploadedThisSession = false;
+                getFeedbackButton.setEnabled(false);
                 setStatus(atsFeedbackStatus, "Resume upload failed: " + error.getMessage());
                 JOptionPane.showMessageDialog(this, error.getMessage(), "Resume Upload", JOptionPane.ERROR_MESSAGE);
             });
         } catch (Exception ex) {
+            setStatus(atsFeedbackStatus, "Unable to read selected resume: " + ex.getMessage());
             JOptionPane.showMessageDialog(this, "Unable to read the selected file: " + ex.getMessage(), "File Error", JOptionPane.ERROR_MESSAGE);
         }
     }
@@ -650,23 +834,61 @@ public class StudentDashboard extends JFrame {
             jobScreeningArea.setText("No placement jobs are available to select.");
             return;
         }
-        jobScreeningArea.setText("Requesting screening report from the server…");
+        clearJobScreeningResults("Screening in progress. Waiting for fresh job-specific results…");
         async(() -> client.sendListRequest("SCREEN_STUDENT", token, selected.id, ""), response -> {
             if (!response.success) {
                 String error = safe(response.errorMessage);
                 if (error.toLowerCase(java.util.Locale.ROOT).contains("unknown command")) {
                     error = "Job-specific screening is not connected in the current server build. The backend has not routed SCREEN_STUDENT to its resume handler.";
                 }
-                jobScreeningArea.setText("The server did not return a screening report.\n\n" + error);
+                clearJobScreeningResults("No current screening results. The last request failed.\n\n" + error);
                 return;
             }
+            jobGauge.setScore(null);
+            scoreBreakdownPanel.clearScores();
+            matchedSkillsPanel.setItems(List.of());
+            missingSkillsPanel.setItems(List.of());
             StringBuilder report = new StringBuilder();
+            Map<String, List<String>> grouped = new LinkedHashMap<>();
             for (String line : response.lines) {
                 if (line == null) continue;
                 int separator = line.indexOf('|');
-                report.append(separator >= 0 ? line.substring(0, separator) + ": " + line.substring(separator + 1) : line).append('\n');
+                String key = separator >= 0 ? line.substring(0, separator).trim().toUpperCase(java.util.Locale.ROOT) : "RESULT";
+                String value = separator >= 0 ? line.substring(separator + 1).trim() : line.trim();
+                grouped.computeIfAbsent(key, ignored -> new ArrayList<>()).add(value);
+                if (key.equals("TOTAL")) jobGauge.setScore(parseScore(value));
+                if (key.equals("SKILL") || key.equals("PROJECTS") || key.equals("EXPERIENCE") || key.equals("CERTIFICATIONS") || key.equals("KEYWORDS")) scoreBreakdownPanel.setScore(key, parseScore(value));
+                if (key.equals("MATCHED")) matchedSkillsPanel.setItems(splitItems(value));
+                if (key.equals("MISSING")) missingSkillsPanel.setItems(splitItems(value));
             }
-            jobScreeningArea.setText(report.toString());
+            Map<String, String> headings = Map.ofEntries(
+                    Map.entry("TOTAL", "Overall screening score"),
+                    Map.entry("SKILL", "Skill score"),
+                    Map.entry("PROJECTS", "Projects score"),
+                    Map.entry("EXPERIENCE", "Experience score"),
+                    Map.entry("CERTIFICATIONS", "Certifications score"),
+                    Map.entry("KEYWORDS", "Keyword score"),
+                    Map.entry("ATS", "Resume ATS score"),
+                    Map.entry("MATCHED", "Matched skills"),
+                    Map.entry("MISSING", "Missing skills"),
+                    Map.entry("STRENGTH", "Strengths"),
+                    Map.entry("IMPROVE", "Suggested improvements"));
+            for (Map.Entry<String, List<String>> entry : grouped.entrySet()) {
+                report.append(headings.getOrDefault(entry.getKey(), entry.getKey())).append('\n');
+                for (String value : entry.getValue()) {
+                    if (entry.getKey().equals("MATCHED") || entry.getKey().equals("MISSING")) {
+                        if (value.isBlank()) {
+                            report.append("  • None returned\n");
+                        } else {
+                            for (String item : value.split(",")) if (!item.isBlank()) report.append("  • ").append(item.trim()).append('\n');
+                        }
+                    } else {
+                        report.append("  • ").append(value).append('\n');
+                    }
+                }
+                report.append('\n');
+            }
+            jobScreeningArea.setText(report.toString().isBlank() ? "The server returned an empty screening report." : report.toString().trim());
         }, error -> jobScreeningArea.setText("Screening report unavailable: " + error.getMessage()));
     }
 
@@ -677,7 +899,10 @@ public class StudentDashboard extends JFrame {
             if (!hasSession()) overviewStatus.setText("No authenticated session is available.");
             else if (!jobsLoadedSuccessfully && !applicationsLoadedSuccessfully) overviewStatus.setText("Waiting for placement and application data from the server.");
             else if (!jobsLoadedSuccessfully || !applicationsLoadedSuccessfully) overviewStatus.setText("Some dashboard data has not loaded successfully.");
-            else overviewStatus.setText("Counts are based on live job and application records returned by the server.");
+            else overviewStatus.setText("Counts and chart are based on records returned by the server.");
+        }
+        if (overviewStatusChart != null) {
+            overviewStatusChart.repaint();
         }
     }
 
@@ -747,6 +972,159 @@ public class StudentDashboard extends JFrame {
                 }
             }
         }.execute();
+    }
+
+
+    /** Draws an application-status chart using only records loaded from GET_MY_APPLICATIONS. */
+    /** Clears overall ATS values so old results cannot be mistaken for a new request. */
+    private void clearOverallAtsResults(String message) {
+        if (atsScoreValue != null) atsScoreValue.setText("ATS Score: —");
+        if (atsGauge != null) atsGauge.setScore(null);
+        if (atsFeedbackArea != null) atsFeedbackArea.setText(message);
+    }
+
+    /** Clears job-specific visual results before a new run or after a failed run. */
+    private void clearJobScreeningResults(String message) {
+        if (jobGauge != null) jobGauge.setScore(null);
+        if (scoreBreakdownPanel != null) scoreBreakdownPanel.clearScores();
+        if (matchedSkillsPanel != null) matchedSkillsPanel.setItems(List.of());
+        if (missingSkillsPanel != null) missingSkillsPanel.setItems(List.of());
+        if (jobScreeningArea != null) jobScreeningArea.setText(message);
+    }
+
+    private Integer parseScore(String raw) {
+        if (raw == null) return null;
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("^\\s*(\\d+(?:\\.\\d+)?)\\s*%?\\s*$").matcher(raw);
+        if (!m.matches()) return null;
+        try { double n = Double.parseDouble(m.group(1)); return n >= 0 && n <= 100 ? (int)Math.round(n) : null; }
+        catch (NumberFormatException ex) { return null; }
+    }
+
+    private List<String> splitItems(String raw) {
+        List<String> result = new ArrayList<>();
+        if (raw != null) for (String s : raw.split(",")) if (!s.isBlank()) result.add(s.trim());
+        return result;
+    }
+
+    private static final class ScoreGauge extends JPanel {
+        private final Color accent; private final String caption; private Integer score;
+        ScoreGauge(Color accent, String caption) { this.accent=accent; this.caption=caption; setOpaque(false); setPreferredSize(new Dimension(122,130)); }
+        void setScore(Integer value) { score=value; repaint(); }
+        @Override protected void paintComponent(Graphics graphics) {
+            super.paintComponent(graphics); Graphics2D g=(Graphics2D)graphics.create();
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            int d=Math.min(88, Math.min(getWidth()-14,getHeight()-30)); if(d<25){g.dispose();return;} int x=(getWidth()-d)/2,y=5;
+            g.setStroke(new BasicStroke(8,BasicStroke.CAP_ROUND,BasicStroke.JOIN_ROUND)); g.setColor(new Color(231,236,232)); g.drawArc(x+4,y+4,d-8,d-8,90,-360);
+            if(score!=null){g.setColor(accent);g.drawArc(x+4,y+4,d-8,d-8,90,(int)(-3.6*score));}
+            String v=score==null?"—":score+"%";g.setFont(getFont().deriveFont(Font.BOLD,18f));g.setColor(TEXT);FontMetrics fm=g.getFontMetrics();g.drawString(v,(getWidth()-fm.stringWidth(v))/2,y+d/2+6);
+            g.setFont(getFont().deriveFont(Font.PLAIN,11f));g.setColor(MUTED);fm=g.getFontMetrics();g.drawString(caption,(getWidth()-fm.stringWidth(caption))/2,y+d+18);g.dispose();
+        }
+    }
+
+    private static final class ScoreBreakdownPanel extends JPanel {
+        private final Map<String,Integer> scores=new LinkedHashMap<>();
+        private final String[] keys={"SKILL","PROJECTS","EXPERIENCE","CERTIFICATIONS","KEYWORDS"};
+        private final String[] names={"Skills","Projects","Experience","Certifications","Keywords"};
+        ScoreBreakdownPanel(){setOpaque(false);setLayout(new GridLayout(keys.length,1,0,3));rebuild();}
+        void setScore(String key,Integer value){if(value==null)scores.remove(key);else scores.put(key,value);rebuild();}
+        void clearScores(){scores.clear();rebuild();}
+        private void rebuild(){removeAll();for(int i=0;i<keys.length;i++){final String k=keys[i];JPanel row=new JPanel(new BorderLayout(6,0));row.setOpaque(false);JLabel name=new JLabel(names[i]);name.setFont(name.getFont().deriveFont(11f));name.setForeground(TEXT);name.setPreferredSize(new Dimension(82,16));row.add(name,BorderLayout.WEST);
+            JComponent bar=new JComponent(){protected void paintComponent(Graphics gg){Graphics2D g=(Graphics2D)gg.create();g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);int w=getWidth(),h=10,y=(getHeight()-h)/2;g.setColor(new Color(235,239,236));g.fillRoundRect(0,y,w,h,8,8);Integer n=scores.get(k);if(n!=null&&w>0){Color[] cs={new Color(62,160,83),new Color(49,139,216),new Color(235,166,51),new Color(220,76,76),new Color(126,92,190)};g.setColor(cs[java.util.Arrays.asList(keys).indexOf(k)]);g.fillRoundRect(0,y,w*n/100,h,8,8);}g.dispose();}};row.add(bar,BorderLayout.CENTER);JLabel val=new JLabel(scores.containsKey(k)?scores.get(k)+"%":"—",SwingConstants.RIGHT);val.setFont(val.getFont().deriveFont(11f));val.setForeground(MUTED);val.setPreferredSize(new Dimension(34,16));row.add(val,BorderLayout.EAST);add(row);}revalidate();repaint();}
+    }
+
+    private static final class SkillListPanel extends JPanel {
+        private final Color accent; private final JPanel chips=new JPanel(new FlowLayout(FlowLayout.LEFT,5,4));
+        SkillListPanel(String title,Color accent){this.accent=accent;setLayout(new BorderLayout(0,4));setBackground(Color.WHITE);setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(BORDER),new EmptyBorder(6,7,6,7)));JLabel label=new JLabel(title);label.setFont(label.getFont().deriveFont(Font.BOLD,12f));label.setForeground(accent);add(label,BorderLayout.NORTH);chips.setOpaque(false);add(chips,BorderLayout.CENTER);setItems(List.of());}
+        void setItems(List<String> items){chips.removeAll();if(items==null||items.isEmpty()){JLabel empty=new JLabel("No items returned");empty.setForeground(MUTED);empty.setFont(empty.getFont().deriveFont(11f));chips.add(empty);}else for(String s:items){JLabel chip=new JLabel(s);chip.setFont(chip.getFont().deriveFont(11f));chip.setForeground(accent.darker());chip.setOpaque(true);chip.setBackground(new Color(accent.getRed(),accent.getGreen(),accent.getBlue(),22));chip.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(new Color(accent.getRed(),accent.getGreen(),accent.getBlue(),75)),new EmptyBorder(3,6,3,6)));chips.add(chip);}revalidate();repaint();}
+    }
+
+    private final class StatusChartPanel extends JPanel {
+        private StatusChartPanel() {
+            setOpaque(false);
+            setPreferredSize(new Dimension(400, 230));
+            setMinimumSize(new Dimension(250, 150));
+        }
+
+        @Override
+        protected void paintComponent(Graphics graphics) {
+            super.paintComponent(graphics);
+            Graphics2D g = (Graphics2D) graphics.create();
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            int width = getWidth();
+            int height = getHeight();
+            if (!applicationsLoadedSuccessfully) {
+                g.setColor(MUTED);
+                g.setFont(new Font("SansSerif", Font.PLAIN, 13));
+                drawWrapped(g, "Application status chart will appear after your application records load.", 4, 22, Math.max(120, width - 8));
+                g.dispose();
+                return;
+            }
+
+            Map<String, Integer> counts = new LinkedHashMap<>();
+            for (int row = 0; row < applicationsModel.getRowCount(); row++) {
+                String status = String.valueOf(applicationsModel.getValueAt(row, 3)).trim();
+                if (status.isEmpty() || status.equalsIgnoreCase("null")) status = "Unknown";
+                counts.merge(status, 1, Integer::sum);
+            }
+            if (counts.isEmpty()) {
+                g.setColor(MUTED);
+                g.setFont(new Font("SansSerif", Font.PLAIN, 13));
+                g.drawString("No application records to chart yet.", 4, 24);
+                g.dispose();
+                return;
+            }
+
+            int max = counts.values().stream().mapToInt(Integer::intValue).max().orElse(1);
+            int labelWidth = Math.min(145, Math.max(90, width / 3));
+            int rightPadding = 34;
+            int barX = labelWidth + 10;
+            int barWidth = Math.max(40, width - barX - rightPadding);
+            int top = 10;
+            int rowHeight = Math.max(27, Math.min(38, (height - 16) / counts.size()));
+            int shown = 0;
+            for (Map.Entry<String, Integer> entry : counts.entrySet()) {
+                if (top + rowHeight > height + 4) break;
+                g.setFont(new Font("SansSerif", Font.PLAIN, 12));
+                g.setColor(TEXT);
+                String status = entry.getKey();
+                FontMetrics fm = g.getFontMetrics();
+                while (fm.stringWidth(status) > labelWidth - 8 && status.length() > 4) {
+                    status = status.substring(0, status.length() - 4) + "…";
+                }
+                g.drawString(status, 2, top + 17);
+                int filled = (int) Math.round(barWidth * (entry.getValue() / (double) max));
+                g.setColor(new Color(232, 239, 233));
+                g.fillRoundRect(barX, top + 3, barWidth, 17, 8, 8);
+                g.setColor(GREEN);
+                g.fillRoundRect(barX, top + 3, Math.max(5, filled), 17, 8, 8);
+                g.setColor(TEXT);
+                g.drawString(String.valueOf(entry.getValue()), Math.min(width - 18, barX + filled + 6), top + 17);
+                top += rowHeight;
+                shown++;
+            }
+            if (shown < counts.size()) {
+                g.setColor(MUTED);
+                g.setFont(new Font("SansSerif", Font.PLAIN, 11));
+                g.drawString("Showing " + shown + " of " + counts.size() + " statuses", 2, Math.max(12, height - 3));
+            }
+            g.dispose();
+        }
+
+        private void drawWrapped(Graphics2D g, String text, int x, int y, int maxWidth) {
+            FontMetrics fm = g.getFontMetrics();
+            StringBuilder line = new StringBuilder();
+            for (String word : text.split("\\s+")) {
+                String candidate = line.length() == 0 ? word : line + " " + word;
+                if (fm.stringWidth(candidate) > maxWidth && line.length() > 0) {
+                    g.drawString(line.toString(), x, y);
+                    y += fm.getHeight() + 3;
+                    line = new StringBuilder(word);
+                } else {
+                    line = new StringBuilder(candidate);
+                }
+            }
+            if (line.length() > 0) g.drawString(line.toString(), x, y);
+        }
     }
 
     private static JPanel page() {
