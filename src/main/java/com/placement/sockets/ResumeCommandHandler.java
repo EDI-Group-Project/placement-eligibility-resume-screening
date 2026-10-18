@@ -40,7 +40,7 @@ import java.util.Set;
  */
 public class ResumeCommandHandler {
 
-    private static final Set<String> COMMANDS = Set.of("UPLOAD_RESUME", "GET_ATS_FEEDBACK", "SCREEN_STUDENT", "RANK_CANDIDATES");
+    private static final Set<String> COMMANDS = Set.of("UPLOAD_RESUME", "GET_ATS_FEEDBACK", "SCREEN_STUDENT", "RANK_CANDIDATES", "DOWNLOAD_RESUME", "GET_RESUME_STATUS");
 
     /** Must equal what LoginResult.getAccountType() returns for a student account (compared case-insensitively). */
     private static final String STUDENT_ROLE = "STUDENT";
@@ -75,8 +75,10 @@ public class ResumeCommandHandler {
             switch (command) {
                 case "UPLOAD_RESUME" -> upload(reader, writer, isStudent, accountId);
                 case "GET_ATS_FEEDBACK" -> atsFeedback(writer, isStudent, accountId);
-                case "SCREEN_STUDENT" -> screen(reader, writer, isStudent, accountId);
-                case "RANK_CANDIDATES" -> rank(reader, writer, isStudent);
+                case "SCREEN_STUDENT" -> screen(reader, writer, isStudent, accountId, token);
+                case "RANK_CANDIDATES" -> rank(reader, writer, isStudent, token);
+                case "DOWNLOAD_RESUME" -> download(reader, writer, isStudent, accountId, token);
+                case "GET_RESUME_STATUS" -> resumeStatus(writer, isStudent, accountId);
                 default -> writer.println("FAILED|Unknown command: " + command);
             }
         } catch (LineTooLongException e) {
@@ -127,14 +129,17 @@ public class ResumeCommandHandler {
         writeList(writer, lines);
     }
 
-    private void screen(BufferedReader reader, PrintWriter writer, boolean isStudent, int accountId) throws Exception {
+    private void screen(BufferedReader reader, PrintWriter writer, boolean isStudent, int accountId, String token) throws Exception {
+        if (!isStudent && !Set.of("ADMIN", "TPO", "TPC").contains(SessionManager.getRole(token))) {
+            writer.println("FAILED|Not allowed."); return;
+        }
         String jobId = readBoundedLine(reader, MAX_SHORT_LINE);
         String studentIdRaw = readBoundedLine(reader, MAX_SHORT_LINE);
         if (jobId == null || jobId.isBlank()) {
             writer.println("FAILED|Job ID is required.");
             return;
         }
-        int studentId = isStudent ? accountId : parseId(studentIdRaw);   // a student can only ever screen THEMSELVES
+        int studentId = isStudent ? accountId : resolveStudentId(studentIdRaw);   // a student can only ever screen THEMSELVES
 
         JobPosting job = jobService.getJob(jobId.trim());
         if (job == null) {
@@ -147,7 +152,7 @@ public class ResumeCommandHandler {
             return;
         }
 
-        ResumeScreeningService.Outcome outcome = SERVICE.screen(student, job);
+        ResumeScreeningService.Outcome outcome = isStudent ? SERVICE.screen(student, job) : SERVICE.screenAndSave(student, job);
         ScreeningResult r = outcome.screening();
         List<String> lines = new ArrayList<>();
         lines.add("TOTAL|" + r.getTotalScore());
@@ -164,8 +169,8 @@ public class ResumeCommandHandler {
         writeList(writer, lines);
     }
 
-    private void rank(BufferedReader reader, PrintWriter writer, boolean isStudent) throws Exception {
-        if (isStudent) {
+    private void rank(BufferedReader reader, PrintWriter writer, boolean isStudent, String token) throws Exception {
+        if (isStudent || !Set.of("ADMIN", "TPO", "TPC").contains(SessionManager.getRole(token))) {
             writer.println("FAILED|Not allowed.");
             return;
         }
@@ -190,11 +195,43 @@ public class ResumeCommandHandler {
 
     // ------------------------------------------------------------------
 
+
+    private void resumeStatus(PrintWriter writer, boolean isStudent, int studentId) throws Exception {
+        if (!isStudent) { writer.println("FAILED|This status endpoint is for students."); return; }
+        com.placement.database.ResumeDAO.ResumeRecord record = new com.placement.database.ResumeDAO().findByStudentId(studentId);
+        writer.println(record == null ? "SUCCESS|MISSING" : "SUCCESS|AVAILABLE|" + oneLine(record.fileName()));
+    }
+
+    private void download(BufferedReader reader, PrintWriter writer, boolean isStudent, int accountId, String token) throws Exception {
+        String raw = readBoundedLine(reader, MAX_SHORT_LINE);
+        int target = isStudent ? accountId : resolveStudentId(raw);
+        String role = SessionManager.getRole(token);
+        if (!isStudent && !Set.of("ADMIN", "TPO", "TPC", "DIRECTOR", "DEAN").contains(role)) {
+            writer.println("FAILED|Not allowed."); return;
+        }
+        com.placement.database.ResumeDAO.ResumeRecord record = new com.placement.database.ResumeDAO().findByStudentId(target);
+        if (record == null) { writer.println("FAILED|No resume uploaded."); return; }
+        java.nio.file.Path file = java.nio.file.Paths.get(record.filePath()).normalize();
+        if (!java.nio.file.Files.isRegularFile(file)) { writer.println("FAILED|Stored resume file is missing."); return; }
+        String encoded = Base64.getEncoder().encodeToString(java.nio.file.Files.readAllBytes(file));
+        writer.println("SUCCESS|" + Base64.getEncoder().encodeToString(record.fileName().getBytes(java.nio.charset.StandardCharsets.UTF_8)) + "|" + encoded);
+    }
+
     private static void writeList(PrintWriter writer, List<String> lines) {
         writer.println("SUCCESS");
         writer.println(lines.size());
         for (String line : lines) writer.println(line);
         writer.println("END");
+    }
+
+    private int resolveStudentId(String raw) throws Exception {
+        String value = raw == null ? "" : raw.trim();
+        try { return Integer.parseInt(value); } catch (NumberFormatException ignored) { }
+        if (value.isBlank()) throw new IllegalArgumentException("Student ID or PRN is required.");
+        for (Student student : studentService.getAllStudents()) {
+            if (value.equalsIgnoreCase(student.getPrn()) || value.equalsIgnoreCase(student.getEmail())) return student.getStudentId();
+        }
+        throw new IllegalArgumentException("Student not found. Enter a valid student ID, PRN, or email.");
     }
 
     private static int parseId(String raw) {
