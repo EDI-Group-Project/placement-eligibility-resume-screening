@@ -114,6 +114,11 @@ public class ResumeScreeningService {
         return parser.fromCachedText(record.extractedText(), studentId, record.fileName());
     }
 
+    /** True when the student already has a resume on file (lets a staff upload say it replaced one). */
+    public boolean hasResume(int studentId) throws SQLException {
+        return resumeDAO.existsForStudent(studentId);
+    }
+
     /** ATS-friendliness feedback for a student's current resume (independent of any job). */
     public AtsFeedbackResult atsFeedback(int studentId) throws SQLException {
         return atsService.evaluate(loadResume(studentId));
@@ -127,8 +132,8 @@ public class ResumeScreeningService {
 
     /**
      * Same as {@link #screen} but also stores the score in applications.screening_score.
-     * NOTE: ApplicationDAO.saveScreeningScore creates an application row (status default) when none exists
-     * yet - call this only where that is intended, otherwise use {@link #screen}.
+     * The score is saved only on an application the student already made; screening a student who has not
+     * applied returns the result but does not create an application (see ApplicationDAO.saveScreeningScore).
      */
     public Outcome screenAndSave(Student student, JobPosting job) throws SQLException {
         Outcome outcome = screen(student, job);
