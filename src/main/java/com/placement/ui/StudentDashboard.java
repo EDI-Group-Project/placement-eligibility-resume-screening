@@ -48,16 +48,24 @@ public class StudentDashboard extends JFrame {
     private final CardLayout cardLayout = new CardLayout();
     private final JPanel content = new JPanel(cardLayout);
 
-    private final DefaultTableModel jobsModel = model(new String[]{
+    private final DefaultTableModel jobsModel = new DefaultTableModel(new String[]{
             "Job ID", "Company", "Role", "Package", "Min CGPA", "Branches",
-            "Max Backlogs", "Passing Year", "Required Skills", "Deadline", "Apply"});
+            "Max Backlogs", "Passing Year", "Required Skills", "Deadline", "Apply"}, 0) {
+        // JTable will never activate ApplyButtonEditor if the model reports the cell
+        // as non-editable. Keep all data cells read-only and enable only the action cell.
+        @Override public boolean isCellEditable(int row, int column) {
+            return column == 10 && "Apply".equals(String.valueOf(getValueAt(row, column)));
+        }
+    };
     private final DefaultTableModel applicationsModel = model(new String[]{
             "Job ID", "Company", "Role", "Status", "Screening Score", "Applied At"});
     private final DefaultTableModel reportStatusModel = model(new String[]{"Application Status", "Count", "Share"});
+    private final DefaultTableModel notificationsModel = model(new String[]{"Date", "Subject", "Message", "Related Drive"});
 
     private final JTable jobsTable = new JTable(jobsModel);
     private final JTable applicationsTable = new JTable(applicationsModel);
     private final JTable reportStatusTable = new JTable(reportStatusModel);
+    private final JTable notificationsTable = new JTable(notificationsModel);
 
     private final List<String[]> allJobs = new ArrayList<>();
     private final Set<String> appliedJobIds = new HashSet<>();
@@ -288,8 +296,12 @@ public class StudentDashboard extends JFrame {
         heading.add(feedback, BorderLayout.EAST);
         page.add(heading, BorderLayout.NORTH);
 
-        JPanel body = new JPanel(new GridLayout(2, 1, 0, 12));
+        // Use a vertically scrolling layout instead of forcing both complex cards
+        // into equal GridLayout rows. Equal-height rows squeezed the nested upload,
+        // feedback, gauge and skills components and caused visual overlap.
+        JPanel body = new JPanel();
         body.setOpaque(false);
+        body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
 
         // Overall report: values are populated only from GET_ATS_FEEDBACK.
         JPanel overall = whiteCard();
@@ -364,9 +376,15 @@ public class StudentDashboard extends JFrame {
         atsFeedbackArea.setText("Upload your resume, then select Get Feedback to request the current server report.");
         reportColumn.add(new JScrollPane(atsFeedbackArea), BorderLayout.CENTER);
         overallResults.add(reportColumn, BorderLayout.CENTER);
+        overallResults.setMinimumSize(new Dimension(500, 170));
         overallContent.add(overallResults, BorderLayout.CENTER);
         overall.add(overallContent, BorderLayout.CENTER);
+        overall.setAlignmentX(Component.LEFT_ALIGNMENT);
+        overall.setPreferredSize(new Dimension(900, 430));
+        overall.setMinimumSize(new Dimension(650, 390));
+        overall.setMaximumSize(new Dimension(Integer.MAX_VALUE, 430));
         body.add(overall);
+        body.add(Box.createVerticalStrut(12));
 
         // Job-specific report: only real jobs from GET_JOBS are selectable.
         JPanel jobSpecific = whiteCard();
@@ -408,11 +426,21 @@ public class StudentDashboard extends JFrame {
         JScrollPane detailsScroll = new JScrollPane(jobScreeningArea);
         detailsScroll.setPreferredSize(new Dimension(500, 95));
         screeningResults.add(detailsScroll, BorderLayout.SOUTH);
+        screeningResults.setMinimumSize(new Dimension(500, 250));
         jobContent.add(screeningResults, BorderLayout.CENTER);
         jobSpecific.add(jobContent, BorderLayout.CENTER);
+        jobSpecific.setAlignmentX(Component.LEFT_ALIGNMENT);
+        jobSpecific.setPreferredSize(new Dimension(900, 430));
+        jobSpecific.setMinimumSize(new Dimension(650, 390));
+        jobSpecific.setMaximumSize(new Dimension(Integer.MAX_VALUE, 430));
         body.add(jobSpecific);
 
-        page.add(body, BorderLayout.CENTER);
+        JScrollPane bodyScroll = new JScrollPane(body);
+        bodyScroll.setBorder(BorderFactory.createEmptyBorder());
+        bodyScroll.setOpaque(false);
+        bodyScroll.getViewport().setOpaque(false);
+        bodyScroll.getVerticalScrollBar().setUnitIncrement(18);
+        page.add(bodyScroll, BorderLayout.CENTER);
         atsFeedbackStatus = label("Scores and feedback are shown only when returned by the server.", 11, false, MUTED);
         page.add(atsFeedbackStatus, BorderLayout.SOUTH);
         return page;
@@ -423,16 +451,23 @@ public class StudentDashboard extends JFrame {
         JPanel top = new JPanel(new BorderLayout());
         top.setOpaque(false);
         top.add(label("Notifications", 22, true, TEXT), BorderLayout.WEST);
-        JButton refresh = button("Check Availability");
+        JButton refresh = button("Refresh Notifications");
         refresh.addActionListener(e -> loadNotifications());
         top.add(refresh, BorderLayout.EAST);
         page.add(top, BorderLayout.NORTH);
 
-        JPanel body = new JPanel(new BorderLayout(0, 12));
+        JPanel body = new JPanel(new BorderLayout(0, 10));
         body.setOpaque(false);
-        body.add(infoCard("Student notifications are not available yet",
-                "The current server endpoint returns general notification history and does not verify that each record belongs to the signed-in student. To protect student privacy, this page does not display those records. The frontend can show a personal feed once the backend provides student-scoped results."), BorderLayout.NORTH);
-        notificationsStatus = label("No notification records have been displayed.", 12, false, MUTED);
+        body.add(infoCard("Student announcements",
+                "This page displays general announcements marked for all students. The current server returns shared notification history, not a verified personal feed, so job-specific or individually targeted notifications are not shown here."), BorderLayout.NORTH);
+
+        styleTable(notificationsTable);
+        notificationsTable.setRowHeight(34);
+        notificationsTable.setAutoResizeMode(JTable.AUTO_RESIZE_LAST_COLUMN);
+        JScrollPane scroll = new JScrollPane(notificationsTable);
+        scroll.setBorder(BorderFactory.createLineBorder(BORDER));
+        body.add(scroll, BorderLayout.CENTER);
+        notificationsStatus = label("Select Refresh Notifications to load announcements.", 12, false, MUTED);
         body.add(notificationsStatus, BorderLayout.SOUTH);
         page.add(body, BorderLayout.CENTER);
         return page;
@@ -440,10 +475,17 @@ public class StudentDashboard extends JFrame {
 
     private JPanel profilePage() {
         JPanel page = page();
-        JPanel title = verticalGroup();
-        title.add(label("My Profile", 24, true, TEXT));
-        title.add(Box.createVerticalStrut(4));
-        title.add(label("Personal and academic details available for your account", 13, false, MUTED));
+        JPanel title = new JPanel(new BorderLayout());
+        title.setOpaque(false);
+        JPanel titleGroup = verticalGroup();
+        titleGroup.add(label("My Profile", 24, true, TEXT));
+        titleGroup.add(Box.createVerticalStrut(4));
+        titleGroup.add(label("Personal and academic details available for your account", 13, false, MUTED));
+        title.add(titleGroup, BorderLayout.WEST);
+        JButton refresh = button("Refresh Profile");
+        refresh.setEnabled(false);
+        refresh.setToolTipText("The current backend does not provide a student profile retrieval command.");
+        title.add(refresh, BorderLayout.EAST);
         page.add(title, BorderLayout.NORTH);
 
         JPanel profile = new JPanel(new GridLayout(0, 2, 10, 10));
@@ -455,8 +497,8 @@ public class StudentDashboard extends JFrame {
         addProfileField(profile, "PRN / Student ID", unavailableProfileValue());
         addProfileField(profile, "Department / Branch", unavailableProfileValue());
         addProfileField(profile, "Current CGPA", unavailableProfileValue());
-        addProfileField(profile, "10th Standard Marks", unavailableProfileValue());
-        addProfileField(profile, "12th / Diploma Marks", unavailableProfileValue());
+        addProfileField(profile, "10th Standard Marks", "Not stored in the current student schema");
+        addProfileField(profile, "12th / Diploma Marks", "Not stored in the current student schema");
         addProfileField(profile, "Passing Year", unavailableProfileValue());
         addProfileField(profile, "Active Backlogs", unavailableProfileValue());
         addProfileField(profile, "Current Semester", unavailableProfileValue());
@@ -466,7 +508,7 @@ public class StudentDashboard extends JFrame {
         JPanel wrapper = new JPanel(new BorderLayout(0, 12));
         wrapper.setOpaque(false);
         wrapper.add(profile, BorderLayout.NORTH);
-        wrapper.add(label("The current login session provides name and email only. The server does not expose a student-specific profile retrieval command, so CGPA, branch, passing year, backlogs, semester, phone and skills cannot be fetched by this frontend even though some exist in the Student model. The supplied student schema has no 10th/12th marks fields. Unavailable fields are shown explicitly rather than guessed.", 12, false, MUTED), BorderLayout.CENTER);
+        wrapper.add(label("Only name and email are supplied to this screen by the login session. Although the database model contains PRN, department, CGPA, passing year, backlogs, semester, phone and skills, the current server does not expose a student-authorized profile retrieval command. This frontend-only change cannot safely fetch those fields. No values are guessed or fabricated.", 12, false, MUTED), BorderLayout.CENTER);
         page.add(wrapper, BorderLayout.CENTER);
         return page;
     }
@@ -598,8 +640,8 @@ public class StudentDashboard extends JFrame {
                 loadApplications();
                 return;
             }
-            appliedJobIds.add(jobId);
-            applyJobFilter();
+            // The applications list returned by the server is the source of truth.
+            // Refresh it before deciding the final button state.
             JOptionPane.showMessageDialog(this, safe(response.payload), "Server Response", JOptionPane.INFORMATION_MESSAGE);
             loadApplications();
         }, error -> {
@@ -651,11 +693,42 @@ public class StudentDashboard extends JFrame {
     }
 
     private void loadNotifications() {
-        // The current GET_NOTIFICATIONS command returns shared history and does not
-        // verify which records belong to the authenticated student. Do not expose it
-        // as a personal feed from the student UI.
-        setStatus(notificationsStatus,
-                "Notifications are unavailable in this server version because the endpoint returns shared history, not a verified student-specific feed.");
+        if (!hasSession()) {
+            notificationsModel.setRowCount(0);
+            setStatus(notificationsStatus, "No authenticated session is available. Sign in again to load announcements.");
+            return;
+        }
+        setStatus(notificationsStatus, "Loading announcements from the server…");
+        async(() -> client.sendListRequest("GET_NOTIFICATIONS", token), response -> {
+            notificationsModel.setRowCount(0);
+            if (!response.success) {
+                setStatus(notificationsStatus, "Unable to load announcements: " + safe(response.errorMessage));
+                return;
+            }
+            int total = 0;
+            for (String line : response.lines) {
+                if (line == null || line.isBlank()) continue;
+                String[] fields = line.split("\\|", -1);
+                // Notification protocol: id | jobId | subject | message | recipientGroup | recipientCount | createdAt
+                if (fields.length < 7) continue;
+                String group = fields[4].trim();
+                if (!(group.equalsIgnoreCase("ALL") || group.equalsIgnoreCase("ALL STUDENTS") || group.equalsIgnoreCase("ALL_STUDENTS"))) continue;
+                String jobId = fields[1].trim();
+                String subject = fields[2].trim();
+                String message = fields[3].trim();
+                String createdAt = fields[6].trim();
+                notificationsModel.addRow(new Object[]{
+                        createdAt.isBlank() ? "Date unavailable" : createdAt,
+                        subject.isBlank() ? "Announcement" : subject,
+                        message.isBlank() ? "No message provided" : message,
+                        jobId.isBlank() ? "General" : jobId
+                });
+                total++;
+            }
+            setStatus(notificationsStatus, total == 0
+                    ? "No general announcements for all students were returned. Job-specific notifications cannot be verified by this frontend."
+                    : "Loaded " + total + " general announcement(s). This is not a verified personal notification feed.");
+        }, error -> setStatus(notificationsStatus, "Unable to load announcements: " + safe(error.getMessage())));
     }
 
     private void loadAtsFeedback() {
@@ -1060,52 +1133,68 @@ public class StudentDashboard extends JFrame {
                 return;
             }
 
-            Map<String, Integer> counts = new LinkedHashMap<>();
-            for (int row = 0; row < applicationsModel.getRowCount(); row++) {
-                String status = String.valueOf(applicationsModel.getValueAt(row, 3)).trim();
-                if (status.isEmpty() || status.equalsIgnoreCase("null")) status = "Unknown";
-                counts.merge(status, 1, Integer::sum);
-            }
-            if (counts.isEmpty()) {
+            int total = applicationsModel.getRowCount();
+            if (total == 0) {
+                g.setColor(TEXT);
+                g.setFont(new Font("SansSerif", Font.BOLD, 14));
+                g.drawString("No applications yet", 4, 25);
                 g.setColor(MUTED);
-                g.setFont(new Font("SansSerif", Font.PLAIN, 13));
-                g.drawString("No application records to chart yet.", 4, 24);
+                g.setFont(new Font("SansSerif", Font.PLAIN, 12));
+                drawWrapped(g,
+                        "Application details will appear here after you apply to a placement drive.",
+                        4, 49, Math.max(120, width - 8));
                 g.dispose();
                 return;
             }
 
-            int max = counts.values().stream().mapToInt(Integer::intValue).max().orElse(1);
-            int labelWidth = Math.min(145, Math.max(90, width / 3));
-            int rightPadding = 34;
-            int barX = labelWidth + 10;
-            int barWidth = Math.max(40, width - barX - rightPadding);
-            int top = 10;
-            int rowHeight = Math.max(27, Math.min(38, (height - 16) / counts.size()));
-            int shown = 0;
-            for (Map.Entry<String, Integer> entry : counts.entrySet()) {
-                if (top + rowHeight > height + 4) break;
-                g.setFont(new Font("SansSerif", Font.PLAIN, 12));
-                g.setColor(TEXT);
-                String status = entry.getKey();
-                FontMetrics fm = g.getFontMetrics();
-                while (fm.stringWidth(status) > labelWidth - 8 && status.length() > 4) {
-                    status = status.substring(0, status.length() - 4) + "…";
+            // Show each real application with its company, role and current status.
+            // Data comes directly from GET_MY_APPLICATIONS; no placeholder records are added.
+            int top = 4;
+            int rowHeight = 31;
+            int shown = Math.min(total, Math.max(1, (height - 24) / rowHeight));
+            for (int row = 0; row < shown; row++) {
+                String company = String.valueOf(applicationsModel.getValueAt(row, 1)).trim();
+                String role = String.valueOf(applicationsModel.getValueAt(row, 2)).trim();
+                String status = String.valueOf(applicationsModel.getValueAt(row, 3)).trim();
+                if (company.isBlank() || company.equalsIgnoreCase("null")) company = "Company not specified";
+                if (role.isBlank() || role.equalsIgnoreCase("null")) role = "Role not specified";
+                if (status.isBlank() || status.equalsIgnoreCase("null")) status = "Unknown";
+
+                if (row % 2 == 0) {
+                    g.setColor(new Color(246, 249, 246));
+                    g.fillRoundRect(0, top, Math.max(1, width - 4), rowHeight - 2, 7, 7);
                 }
-                g.drawString(status, 2, top + 17);
-                int filled = (int) Math.round(barWidth * (entry.getValue() / (double) max));
-                g.setColor(new Color(232, 239, 233));
-                g.fillRoundRect(barX, top + 3, barWidth, 17, 8, 8);
-                g.setColor(GREEN);
-                g.fillRoundRect(barX, top + 3, Math.max(5, filled), 17, 8, 8);
+                g.setFont(new Font("SansSerif", Font.BOLD, 12));
                 g.setColor(TEXT);
-                g.drawString(String.valueOf(entry.getValue()), Math.min(width - 18, barX + filled + 6), top + 17);
+                String title = company + "  —  " + role;
+                int statusWidth = Math.min(112, Math.max(65, g.getFontMetrics().stringWidth(status) + 18));
+                int available = Math.max(50, width - statusWidth - 28);
+                FontMetrics titleMetrics = g.getFontMetrics();
+                while (titleMetrics.stringWidth(title) > available && title.length() > 8) {
+                    title = title.substring(0, title.length() - 4) + "…";
+                }
+                g.drawString(title, 8, top + 18);
+
+                Color statusColor = status.equalsIgnoreCase("SELECTED") || status.equalsIgnoreCase("OFFERED")
+                        ? new Color(30, 120, 65)
+                        : status.equalsIgnoreCase("REJECTED") ? new Color(175, 55, 55) : GREEN;
+                int badgeX = Math.max(8, width - statusWidth - 8);
+                g.setColor(new Color(statusColor.getRed(), statusColor.getGreen(), statusColor.getBlue(), 24));
+                g.fillRoundRect(badgeX, top + 5, statusWidth, 20, 9, 9);
+                g.setColor(statusColor);
+                g.setFont(new Font("SansSerif", Font.PLAIN, 10));
+                FontMetrics statusMetrics = g.getFontMetrics();
+                String shownStatus = status;
+                while (statusMetrics.stringWidth(shownStatus) > statusWidth - 10 && shownStatus.length() > 4) {
+                    shownStatus = shownStatus.substring(0, shownStatus.length() - 4) + "…";
+                }
+                g.drawString(shownStatus, badgeX + Math.max(5, (statusWidth - statusMetrics.stringWidth(shownStatus)) / 2), top + 19);
                 top += rowHeight;
-                shown++;
             }
-            if (shown < counts.size()) {
+            if (shown < total) {
                 g.setColor(MUTED);
                 g.setFont(new Font("SansSerif", Font.PLAIN, 11));
-                g.drawString("Showing " + shown + " of " + counts.size() + " statuses", 2, Math.max(12, height - 3));
+                g.drawString("Showing " + shown + " of " + total + " applications", 4, height - 3);
             }
             g.dispose();
         }
