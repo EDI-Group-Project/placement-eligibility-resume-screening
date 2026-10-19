@@ -74,9 +74,15 @@ public class SocketClient {
     }
 
     public ListResponse sendListRequest(String command, String... params) throws IOException {
+        return sendListRequest(command, 10000, params);
+    }
+
+    /** Allows long-running operations such as multi-resume uploads to use a longer read timeout. */
+    public ListResponse sendListRequest(String command, int readTimeoutMillis, String... params) throws IOException {
+        if (readTimeoutMillis < 1) throw new IllegalArgumentException("Read timeout must be positive.");
         try (Socket socket = new Socket()) {
             socket.connect(new InetSocketAddress(host, port), 5000);
-            socket.setSoTimeout(10000);
+            socket.setSoTimeout(readTimeoutMillis);
 
             try (PrintWriter writer = new PrintWriter(socket.getOutputStream(), true);
                  BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
