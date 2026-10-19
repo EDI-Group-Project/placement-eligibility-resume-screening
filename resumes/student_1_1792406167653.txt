@@ -1,0 +1,44 @@
+# AAARAV SHARMA
+Jaipur, Rajasthan | aaarav.sharma@example.com | +91-90000-12345
+
+## PROFESSIONAL SUMMARY
+Motivated undergraduate student interested in software development and digital product design. Enjoys solving practical problems, learning new tools, and collaborating on small projects. Seeking an internship to develop technical skills and contribute to a professional team.
+
+## EDUCATION
+**Bachelor of Technology (B.Tech), Information Technology**  
+Rajasthan Institute of Technology, Jaipur  
+2023–2027 | Expected graduation: 2027
+
+## TECHNICAL SKILLS
+- **Languages:** Python, JavaScript, HTML, CSS
+- **Tools:** Git, GitHub, Visual Studio Code, Figma
+- **Core skills:** Responsive web design, debugging, documentation, teamwork
+
+## ACADEMIC PROJECTS
+
+**1. Community Event Finder**
+- Designed a website concept for discovering local events by category and date.
+- Created responsive event cards using HTML, CSS, and JavaScript.
+- Implemented basic event filtering with sample data.
+
+**2. Personal Budget Planner**
+- Developed a browser-based interface for recording income and expenses.
+- Added expense categories and a monthly summary view.
+- Focused on clear navigation and basic input validation.
+
+**3. Website Quality Checklist**
+- Prepared a checklist for reviewing layouts, broken links, accessibility basics, and mobile display.
+- Documented issues and suggested practical improvements.
+
+## EXPERIENCE
+**Student Volunteer — Campus Activities**
+- Helped coordinate event registrations and attendee communication.
+- Collaborated with a small team to prepare schedules and track tasks.
+
+## CERTIFICATIONS & LEARNING
+- Introductory Web Development — Self-paced learning
+- Git and GitHub Fundamentals — Self-paced learning
+
+## ADDITIONAL INFORMATION
+- **Languages:** English, Hindi
+- **Interests:** UI design, community technology, reading, badminton
