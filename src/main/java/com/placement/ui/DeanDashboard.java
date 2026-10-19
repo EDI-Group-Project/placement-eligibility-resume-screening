@@ -3,6 +3,15 @@ package com.placement.ui;
 import static com.placement.ui.DeanDashboard.Kit.*;
 
 import com.placement.sockets.SocketClient;
+import com.placement.ui.DeanDashboard.Kit.Api;
+import com.placement.ui.DeanDashboard.Kit.Bars;
+import com.placement.ui.DeanDashboard.Kit.Card;
+import com.placement.ui.DeanDashboard.Kit.Donut;
+import com.placement.ui.DeanDashboard.Kit.Job;
+import com.placement.ui.DeanDashboard.Kit.NoticesPage;
+import com.placement.ui.DeanDashboard.Kit.Sidebar;
+import com.placement.ui.DeanDashboard.Kit.Student;
+import com.placement.ui.DeanDashboard.Kit.VStack;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -1282,9 +1291,10 @@ static final class Kit {
         }
     }
 
-    static final class Card extends Fill {
+    static final class Card extends JPanel {
         Card() {
             super(new BorderLayout(0, 10));
+            setAlignmentX(Component.LEFT_ALIGNMENT);
             setOpaque(true);
             setBackground(Color.WHITE);
             setBorder(javax.swing.BorderFactory.createCompoundBorder(
