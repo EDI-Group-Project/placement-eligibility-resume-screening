@@ -1,8 +1,9 @@
 package com.placement.ui;
 import javax.swing.*;
-
+import com.placement.sockets.SocketClient;
 import javax.swing.border.EmptyBorder;
 
+import java.io.IOException;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.JTableHeader;
 
@@ -16,8 +17,10 @@ import java.util.List;
 
 public class AdminDashboard extends JFrame {
 
-
-
+// now added for backend connection
+    private final SocketClient client = new SocketClient();
+    private final String displayName;
+    private final String sessionToken;
     private final CardLayout cardLayout = new CardLayout();
 
     private final JPanel contentPanel = new JPanel(cardLayout);
@@ -29,6 +32,7 @@ public class AdminDashboard extends JFrame {
     private final List<String[]> jobs = new ArrayList<>();
 
     private final List<String[]> users = new ArrayList<>();
+    
     private final List<String[]> notifications = new ArrayList<>();
 
 
@@ -44,14 +48,20 @@ public class AdminDashboard extends JFrame {
         this("Admin", "");
     }
     public AdminDashboard(String displayName, String sessionToken) {
-        setTitle("Placement Eligibility Portal - Admin Dashboard");
+    this.displayName = displayName;
+    this.sessionToken = sessionToken;
+
+    setTitle("Placement Eligibility Portal - Admin Dashboard");
         setSize(1250, 750);
         setMinimumSize(new Dimension(1100, 650));
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
 
-        loadSampleData();
+        //loadSampleData(); // remove as it takes sample data, 
         buildUI();
+        // Load real data from the backend
+        loadStudentsFromBackend();
+        loadJobsFromBackend();
     }
 
 
@@ -149,8 +159,6 @@ public class AdminDashboard extends JFrame {
         });
 
     }
-
-
 
     private void buildUI() {
 
@@ -606,18 +614,27 @@ public class AdminDashboard extends JFrame {
         return row;
     }
 
-    private void refreshDashboardAndReports() {
-        contentPanel.removeAll();
-        contentPanel.add(createDashboard(), "DASHBOARD");
-        contentPanel.add(createJobsPanel(), "JOBS");
-        contentPanel.add(createStudentsPanel(), "STUDENTS");
-        contentPanel.add(createUsersPanel(), "USERS");
-        contentPanel.add(createReportsPanel(), "REPORTS");
-        contentPanel.add(createNotificationsPanel(), "NOTIFICATIONS");
-        contentPanel.revalidate();
-        contentPanel.repaint();
-        cardLayout.show(contentPanel, "DASHBOARD");
-    }
+
+private void refreshDashboardAndReports() {
+    // Fetch fresh records before rebuilding dashboard panels.
+    loadStudentsFromBackend();
+    loadJobsFromBackend();
+
+    contentPanel.removeAll();
+
+    contentPanel.add(createDashboard(), "DASHBOARD");
+    contentPanel.add(createJobsPanel(), "JOBS");
+    contentPanel.add(createStudentsPanel(), "STUDENTS");
+    contentPanel.add(createUsersPanel(), "USERS");
+    contentPanel.add(createReportsPanel(), "REPORTS");
+    contentPanel.add(createNotificationsPanel(), "NOTIFICATIONS");
+
+    contentPanel.revalidate();
+    contentPanel.repaint();
+
+    cardLayout.show(contentPanel, "DASHBOARD");
+}
+
 
     private JPanel statCard(String title, String value) {
 
@@ -696,6 +713,53 @@ public class AdminDashboard extends JFrame {
         return card;
     }
 
+    private void loadJobsFromBackend() {
+    if (sessionToken == null || sessionToken.isBlank()) {
+        JOptionPane.showMessageDialog(
+                this,
+                "Your session is missing. Please log in again.",
+                "Authentication Error",
+                JOptionPane.ERROR_MESSAGE
+        );
+        return;
+    }
+
+    try {
+        SocketClient.ListResponse response =
+                client.sendListRequest("GET_JOBS", sessionToken);
+
+        if (!response.success) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Unable to load jobs: " + response.errorMessage,
+                    "Backend Error",
+                    JOptionPane.ERROR_MESSAGE
+            );
+            return;
+        }
+
+        jobs.clear();
+
+        for (String line : response.lines) {
+            if (line == null || line.isBlank()) {
+                continue;
+            }
+
+            jobs.add(line.split("\\|", -1));
+        }
+
+        refreshJobs();
+
+    } catch (Exception e) {
+        JOptionPane.showMessageDialog(
+                this,
+                "Could not contact the backend: " + e.getMessage(),
+                "Connection Error",
+                JOptionPane.ERROR_MESSAGE
+        );
+    }
+}
+
     private JPanel createJobsPanel() {
 
 
@@ -725,6 +789,7 @@ public class AdminDashboard extends JFrame {
         JButton eligible = new JButton("View Eligible Students");
 
         JButton notification = new JButton("Send Notification");
+        JButton refresh = new JButton("Refresh from Database");
 
 
 
@@ -737,6 +802,7 @@ public class AdminDashboard extends JFrame {
         top.add(eligible);
 
         top.add(notification);
+        top.add(refresh);
 
 
 
@@ -825,6 +891,7 @@ public class AdminDashboard extends JFrame {
                 sendNotification()
 
         );
+        refresh.addActionListener(e -> loadJobsFromBackend());
 
 
 
@@ -1293,6 +1360,7 @@ public class AdminDashboard extends JFrame {
 
 
         JTextField searchField = new JTextField(20);
+        JButton refresh = new JButton("Refresh from Database");
 
 
 
@@ -1303,6 +1371,7 @@ public class AdminDashboard extends JFrame {
         top.add(searchField);
 
         top.add(search);
+        top.add(refresh);
 
 
 
@@ -1435,6 +1504,7 @@ public class AdminDashboard extends JFrame {
             }
 
         });
+        refresh.addActionListener(e -> loadStudentsFromBackend());
 
 
 
@@ -1478,6 +1548,95 @@ public class AdminDashboard extends JFrame {
 
     }
 
+    
+private void loadStudentsFromBackend() {
+    try {
+        SocketClient client = new SocketClient();
+
+        SocketClient.ListResponse response =
+                client.sendListRequest("GET_STUDENTS", sessionToken);
+
+        if (!response.success) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Unable to load students: " + response.errorMessage,
+                    "Backend Error",
+                    JOptionPane.ERROR_MESSAGE
+            );
+            return;
+        }
+
+        java.util.List<String[]> loadedStudents =
+                new java.util.ArrayList<>();
+
+        for (String line : response.lines) {
+            if (line == null || line.isBlank()) {
+                continue;
+            }
+
+            String[] fields = line.split("\\|", -1);
+
+            // Student.toProtocolLine() returns 10 fields.
+            if (fields.length < 10) {
+                System.err.println(
+                        "Skipping invalid student record: " + line
+                );
+                continue;
+            }
+
+            String studentId = fields[0];
+            String name = fields[1];
+            String email = fields[2];
+            String branch = fields[3];
+            String cgpa = fields[4];
+            String backlogs = fields[6];
+
+            String eligibility;
+            try {
+                double cgpaValue = Double.parseDouble(cgpa);
+                int backlogValue = Integer.parseInt(backlogs);
+
+                eligibility =
+                        (cgpaValue >= 7.0 && backlogValue == 0)
+                                ? "Eligible"
+                                : "Not Eligible";
+            } catch (NumberFormatException ex) {
+                eligibility = "Not Eligible";
+            }
+
+            loadedStudents.add(new String[] {
+                    studentId,
+                    name,
+                    email,
+                    branch,
+                    cgpa,
+                    backlogs,
+                    eligibility
+            });
+        }
+
+        // Update the shared data only after a successful backend response.
+        students.clear();
+        students.addAll(loadedStudents);
+
+        // Refresh the table if its panel currently exists.
+        refreshStudents();
+
+        System.out.println(
+                "Loaded " + students.size() + " students from the backend."
+        );
+
+    } catch (IOException ex) {
+        JOptionPane.showMessageDialog(
+                this,
+                "Unable to load students: " + ex.getMessage(),
+                "Connection Error",
+                JOptionPane.ERROR_MESSAGE
+        );
+    }
+}
+
+
 
 
     private void addStudent() {
@@ -1496,11 +1655,17 @@ public class AdminDashboard extends JFrame {
 
         JTextField backlog = new JTextField();
 
+        JPasswordField password = new JPasswordField();
+        JTextField passingYear = new JTextField();
+        JTextField semester = new JTextField();
+        JTextField phone = new JTextField();
+        JTextField skills = new JTextField();
+
 
 
         JPanel form = new JPanel(
 
-                new GridLayout(6, 2, 8, 8)
+                new GridLayout(11, 2, 8, 8)
 
         );
 
@@ -1540,6 +1705,21 @@ public class AdminDashboard extends JFrame {
 
         form.add(backlog);
 
+        form.add(new JLabel("Password"));
+        form.add(password);
+
+        form.add(new JLabel("Passing Year"));
+        form.add(passingYear);
+
+        form.add(new JLabel("Semester"));
+        form.add(semester);
+
+        form.add(new JLabel("Phone"));
+        form.add(phone);
+
+form.add(new JLabel("Skills"));
+form.add(skills); 
+
 
 
         int result = JOptionPane.showConfirmDialog(
@@ -1556,35 +1736,179 @@ public class AdminDashboard extends JFrame {
 
 
 
-        if (result != JOptionPane.OK_OPTION) {
+        
+if (result != JOptionPane.OK_OPTION) {
+    return;
+}
 
-            return;
+// Read and trim all form values
+String studentId = id.getText().trim();
+String studentName = name.getText().trim();
+String studentEmail = email.getText().trim();
+String studentBranch = branch.getText().trim();
+String cgpaText = cgpa.getText().trim();
+String backlogText = backlog.getText().trim();
 
-        }
+// 1. Required-field validation
+if (studentId.isEmpty() || studentName.isEmpty()
+        || studentEmail.isEmpty() || studentBranch.isEmpty()
+        || cgpaText.isEmpty() || backlogText.isEmpty()) {
+    JOptionPane.showMessageDialog(
+            this, "Please fill in all fields.",
+            "Validation Error", JOptionPane.WARNING_MESSAGE
+    );
+    return;
+}
 
+// 2. Basic email validation
+if (!studentEmail.matches("^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")) {
+    JOptionPane.showMessageDialog(
+            this, "Please enter a valid email address.",
+            "Validation Error", JOptionPane.WARNING_MESSAGE
+    );
+    return;
+}
 
+// 3. CGPA must be numeric and between 0 and 10
+double cgpaValue;
+try {
+    cgpaValue = Double.parseDouble(cgpaText);
+} catch (NumberFormatException ex) {
+    JOptionPane.showMessageDialog(
+            this, "CGPA must be a valid number between 0 and 10.",
+            "Validation Error", JOptionPane.WARNING_MESSAGE
+    );
+    return;
+}
 
-        students.add(new String[]{
+if (!Double.isFinite(cgpaValue)
+        || cgpaValue < 0.0 || cgpaValue > 10.0) {
+    JOptionPane.showMessageDialog(
+            this, "CGPA must be between 0 and 10.",
+            "Validation Error", JOptionPane.WARNING_MESSAGE
+    );
+    return;
+}
 
-                id.getText(),
+// 4. Backlogs must be a non-negative whole number
+int backlogValue;
+try {
+    backlogValue = Integer.parseInt(backlogText);
+} catch (NumberFormatException ex) {
+    JOptionPane.showMessageDialog(
+            this, "Backlogs must be a whole number, such as 0, 1, or 2.",
+            "Validation Error", JOptionPane.WARNING_MESSAGE
+    );
+    return;
+}
 
-                name.getText(),
+if (backlogValue < 0) {
+    JOptionPane.showMessageDialog(
+            this, "Backlogs cannot be negative.",
+            "Validation Error", JOptionPane.WARNING_MESSAGE
+    );
+    return;
+}
 
-                email.getText(),
+// Read the remaining form values
+String passwordValue = new String(password.getPassword()).trim();
+String passingYearText = passingYear.getText().trim();
+String semesterText = semester.getText().trim();
+String phoneValue = phone.getText().trim();
+String skillsValue = skills.getText().trim();
 
-                branch.getText(),
+if (passwordValue.isEmpty() || passingYearText.isEmpty()
+        || semesterText.isEmpty() || phoneValue.isEmpty()
+        || skillsValue.isEmpty()) {
+    JOptionPane.showMessageDialog(this, "Please fill in all fields.");
+    return;
+}
 
-                cgpa.getText(),
+int passingYearValue;
+int semesterValue;
 
-                backlog.getText(),
+try {
+    passingYearValue = Integer.parseInt(passingYearText);
+    semesterValue = Integer.parseInt(semesterText);
+} catch (NumberFormatException ex) {
+    JOptionPane.showMessageDialog(
+            this, "Passing year and semester must be whole numbers.");
+    return;
+}
 
-                "Eligible"
+if (passingYearValue < 2000 || passingYearValue > 2100) {
+    JOptionPane.showMessageDialog(this, "Enter a valid passing year.");
+    return;
+}
 
-        });
+if (semesterValue < 1 || semesterValue > 8) {
+    JOptionPane.showMessageDialog(
+            this, "Semester must be between 1 and 8.");
+    return;
+}
 
+if (!phoneValue.matches("[0-9]{10}")) {
+    JOptionPane.showMessageDialog(
+            this, "Enter a valid 10-digit phone number.");
+    return;
+}
 
+if (skillsValue.contains("|") || studentId.contains("|")
+        || studentName.contains("|") || studentEmail.contains("|")
+        || studentBranch.contains("|") || passwordValue.contains("|")) {
+    JOptionPane.showMessageDialog(
+            this, "The | character is not allowed in these fields.");
+    return;
+}
 
-        refreshStudents();
+try {
+    SocketClient client = new SocketClient();
+
+    SocketClient.Response response = client.sendRequest(
+            "ADD_STUDENT",
+            sessionToken,
+            studentId,
+            studentName,
+            studentEmail,
+            passwordValue,
+            studentBranch,
+            String.valueOf(cgpaValue),
+            String.valueOf(passingYearValue),
+            String.valueOf(backlogValue),
+            String.valueOf(semesterValue),
+            phoneValue,
+            skillsValue
+    );
+
+    if (response.success) {
+        JOptionPane.showMessageDialog(
+                this,
+                "Student registered successfully in the backend.",
+                "Success",
+                JOptionPane.INFORMATION_MESSAGE
+        );
+
+        // Refresh from the backend after we implement its loader.
+        loadStudentsFromBackend();
+
+    } else {
+        JOptionPane.showMessageDialog(
+                this,
+                "Student was not saved: " + response.payload,
+                "Save Failed",
+                JOptionPane.ERROR_MESSAGE
+        );
+    }
+
+} catch (IOException ex) {
+    JOptionPane.showMessageDialog(
+            this,
+            "Could not connect to the server.\n" + ex.getMessage(),
+            "Connection Error",
+            JOptionPane.ERROR_MESSAGE
+    );
+}
+
 
     }
 
@@ -1727,26 +2051,59 @@ public class AdminDashboard extends JFrame {
     }
 
 
+private void refreshUsers() {
+    if (userModel == null) {
+        return;
+    }
 
-    private void refreshUsers() {
+    userModel.setRowCount(0);
 
+    try {
+        SocketClient client = new SocketClient();
 
+        SocketClient.ListResponse response =
+                client.sendListRequest("GET_FACULTY", sessionToken);
 
-        if (userModel == null) return;
-
-
-
-        userModel.setRowCount(0);
-
-
-
-        for (String[] user : users) {
-
-            userModel.addRow(user);
-
+        if (!response.success) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Could not load users: " + response.errorMessage,
+                    "Load Users Error",
+                    JOptionPane.ERROR_MESSAGE
+            );
+            return;
         }
 
+        for (String line : response.lines) {
+            String[] fields = line.split("\\|", -1);
+
+            // GET_FACULTY protocol:
+            // 0 = Faculty ID
+            // 1 = Name
+            // 2 = Email
+            // 3 = Role
+            // 4 = Department
+            // 5 = Phone
+            if (fields.length >= 4) {
+                userModel.addRow(new String[]{
+                    fields[0],
+                    fields[1],
+                    fields[2],
+                    fields[3]
+                });
+            }
+        }
+
+    } catch (Exception ex) {
+        JOptionPane.showMessageDialog(
+                this,
+                "Unable to load users from the backend: " + ex.getMessage(),
+                "Connection Error",
+                JOptionPane.ERROR_MESSAGE
+        );
     }
+}
+
 
 
 

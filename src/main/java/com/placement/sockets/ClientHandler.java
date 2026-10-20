@@ -26,6 +26,7 @@ public class ClientHandler implements Runnable {
                 case "SEND_NOTIFICATION"->sendNotification(r,w);case "SEND_GENERAL_NOTIFICATION"->sendGeneral(r,w);case "GET_NOTIFICATIONS"->getNotifications(r,w);
                 case "GET_DASHBOARD_STATS"->stats(r,w);case "ADD_FACULTY"->addFaculty(r,w);case "GET_FACULTY"->getFaculty(r,w);case "ADD_STUDENT"->addStudent(r,w);
                 case "APPLY_JOB"->apply(r,w);case "GET_MY_APPLICATIONS"->myApplications(r,w);case "LOGOUT"->logout(r,w);
+                case "GET_MY_PROFILE" -> getMyProfile(r, w);
                 default->{if(resumeCommands.handles(cmd))resumeCommands.handle(cmd,r,w);else w.println("FAILED|Unknown command: "+cmd);}
             }
         }catch(Exception e){System.out.println("Client handler error: "+e.getMessage());}
@@ -47,13 +48,77 @@ public class ClientHandler implements Runnable {
     private void addStudent(BufferedReader r,PrintWriter w)throws IOException {
         String t=token(r,w);if(t==null||!role(t,w,"ADMIN"))return;
         Student s=new Student();s.setPrn(r.readLine());s.setName(r.readLine());s.setEmail(r.readLine());String password=r.readLine();
-        s.setDepartment(r.readLine());s.setCgpa(d(r.readLine()));s.setPassingYear(i(r.readLine()));s.setBacklogs(i(r.readLine()));
+        s.setDepartment(r.readLine());
+
+String cgpaText = r.readLine();
+String passingYearText = r.readLine();
+String backlogsText = r.readLine();
+
+double cgpaValue;
+int passingYearValue;
+int backlogsValue;
+
+try {
+    cgpaValue = Double.parseDouble(cgpaText);
+    passingYearValue = Integer.parseInt(passingYearText);
+    backlogsValue = Integer.parseInt(backlogsText);
+} catch (NumberFormatException ex) {
+    w.println("FAILED|CGPA, passing year and backlogs must be valid numbers.");
+    return;
+}
+
+if (!Double.isFinite(cgpaValue) || cgpaValue < 0 || cgpaValue > 10) {
+    w.println("FAILED|CGPA must be between 0 and 10.");
+    return;
+}
+
+if (passingYearValue < 2000 || passingYearValue > 2100) {
+    w.println("FAILED|Invalid passing year.");
+    return;
+}
+
+if (backlogsValue < 0) {
+    w.println("FAILED|Backlogs cannot be negative.");
+    return;
+}
+
+s.setCgpa(cgpaValue);
+s.setPassingYear(passingYearValue);
+s.setBacklogs(backlogsValue);
         s.setSemester(i(r.readLine()));s.setPhone(r.readLine());s.setSkills(r.readLine());
         if(missing(s.getName(),"Name",w)||missing(s.getEmail(),"Email",w)||missing(password,"Password",w))return;
         String result=registration.registerStudent(s,password);
         if("SUCCESS".equals(result))w.println("SUCCESS|Student registered.");
         else w.println("FAILED|"+result);
     }
+    
+
+private void getMyProfile(BufferedReader r, PrintWriter w)
+        throws IOException {
+
+    String t = token(r, w);
+    if (t == null) return;
+    if (!role(t, w, "STUDENT")) return;
+
+    try {
+        int accountId = SessionManager.getAccountId(t);
+
+        Student student = students.findStudentById(accountId);
+
+        if (student == null) {
+            w.println("FAILED|Student profile not found.");
+            return;
+        }
+
+        // Use the same list-response protocol as SocketClient.sendListRequest().
+        write(w, List.of(student.toProtocolLine()));
+
+    } catch (Exception e) {
+        w.println("FAILED|Unable to retrieve profile: " + e.getMessage());
+    }
+}
+
+
     private void addFaculty(BufferedReader r,PrintWriter w)throws Exception{String t=token(r,w);if(t==null||!role(t,w,"ADMIN"))return;String n=r.readLine(),e=r.readLine(),p=r.readLine(),ro=r.readLine(),d=r.readLine(),ph=r.readLine();if(missing(n,"Name",w)||missing(e,"Email",w)||missing(p,"Password",w))return;w.println("SUCCESS|"+admin.addFaculty(n,e,p,ro,d,ph));}
     private void getFaculty(BufferedReader r,PrintWriter w)throws Exception{String t=token(r,w);if(t==null||!role(t,w,"ADMIN","DIRECTOR","DEAN"))return;write(w,admin.getFaculty().stream().map(f->String.join("|",String.valueOf(f.getFacultyId()),safe(f.getName()),safe(f.getEmail()),safe(f.getRole()),safe(f.getDepartment()),safe(f.getPhone()))).toList());}
     private void apply(BufferedReader r,PrintWriter w)throws Exception{String t=token(r,w);if(t==null||!role(t,w,"STUDENT"))return;String id=r.readLine();if(jobs.getJob(id)==null){w.println("FAILED|Job not found.");return;}w.println("SUCCESS|"+applications.apply(id,SessionManager.getAccountId(t)));}

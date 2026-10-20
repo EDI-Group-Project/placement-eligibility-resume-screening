@@ -10,7 +10,7 @@ import javax.swing.table.JTableHeader;
 import javax.swing.table.TableCellRenderer;
 import javax.swing.table.TableCellEditor;
 import javax.swing.table.DefaultTableCellRenderer;
-import javax.swing.AbstractCellEditor;
+
 import java.awt.*;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
@@ -45,6 +45,7 @@ public class StudentDashboard extends JFrame {
     private final String email;
     private final String token;
     private final SocketClient client = new SocketClient();
+    private final Map<String, JLabel> profileValues = new LinkedHashMap<>();
     private final CardLayout cardLayout = new CardLayout();
     private final JPanel content = new JPanel(cardLayout);
 
@@ -472,50 +473,162 @@ public class StudentDashboard extends JFrame {
         page.add(body, BorderLayout.CENTER);
         return page;
     }
-
+// now added
     private JPanel profilePage() {
-        JPanel page = page();
-        JPanel title = new JPanel(new BorderLayout());
-        title.setOpaque(false);
-        JPanel titleGroup = verticalGroup();
-        titleGroup.add(label("My Profile", 24, true, TEXT));
-        titleGroup.add(Box.createVerticalStrut(4));
-        titleGroup.add(label("Personal and academic details available for your account", 13, false, MUTED));
-        title.add(titleGroup, BorderLayout.WEST);
-        JButton refresh = button("Refresh Profile");
-        refresh.setEnabled(false);
-        refresh.setToolTipText("The current backend does not provide a student profile retrieval command.");
-        title.add(refresh, BorderLayout.EAST);
-        page.add(title, BorderLayout.NORTH);
+    JPanel page = page();
 
-        JPanel profile = new JPanel(new GridLayout(0, 2, 10, 10));
-        profile.setBackground(WHITE);
-        profile.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(BORDER), new EmptyBorder(18, 18, 18, 18)));
-        addProfileField(profile, "Full Name", name);
-        addProfileField(profile, "Email Address", email.isBlank() ? "Not provided by login session" : email);
-        addProfileField(profile, "PRN / Student ID", unavailableProfileValue());
-        addProfileField(profile, "Department / Branch", unavailableProfileValue());
-        addProfileField(profile, "Current CGPA", unavailableProfileValue());
-        addProfileField(profile, "10th Standard Marks", "Not stored in the current student schema");
-        addProfileField(profile, "12th / Diploma Marks", "Not stored in the current student schema");
-        addProfileField(profile, "Passing Year", unavailableProfileValue());
-        addProfileField(profile, "Active Backlogs", unavailableProfileValue());
-        addProfileField(profile, "Current Semester", unavailableProfileValue());
-        addProfileField(profile, "Phone Number", unavailableProfileValue());
-        addProfileField(profile, "Skills", unavailableProfileValue());
+    JPanel title = new JPanel(new BorderLayout());
+    title.setOpaque(false);
 
-        JPanel wrapper = new JPanel(new BorderLayout(0, 12));
-        wrapper.setOpaque(false);
-        wrapper.add(profile, BorderLayout.NORTH);
-        wrapper.add(label("Only name and email are supplied to this screen by the login session. Although the database model contains PRN, department, CGPA, passing year, backlogs, semester, phone and skills, the current server does not expose a student-authorized profile retrieval command. This frontend-only change cannot safely fetch those fields. No values are guessed or fabricated.", 12, false, MUTED), BorderLayout.CENTER);
-        page.add(wrapper, BorderLayout.CENTER);
-        return page;
-    }
+    JPanel titleGroup = verticalGroup();
+    titleGroup.add(label("My Profile", 24, true, TEXT));
+    titleGroup.add(Box.createVerticalStrut(4));
+    titleGroup.add(label(
+            "Your personal and academic details",
+            13, false, MUTED
+    ));
+
+    title.add(titleGroup, BorderLayout.WEST);
+
+    JButton refresh = button("Refresh Profile");
+    refresh.addActionListener(e -> loadMyProfile());
+    title.add(refresh, BorderLayout.EAST);
+
+    page.add(title, BorderLayout.NORTH);
+
+    JPanel profile = new JPanel(new GridLayout(0, 2, 10, 10));
+    profile.setBackground(WHITE);
+    profile.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(BORDER),
+            new EmptyBorder(18, 18, 18, 18)
+    ));
+
+    profileValues.clear();
+
+    addProfileValue(profile, "Full Name", name);
+    addProfileValue(profile, "Email Address", email);
+    addProfileValue(profile, "PRN / Student ID", "Loading...");
+    addProfileValue(profile, "Department / Branch", "Loading...");
+    addProfileValue(profile, "Current CGPA", "Loading...");
+    addProfileValue(profile, "Passing Year", "Loading...");
+    addProfileValue(profile, "Active Backlogs", "Loading...");
+    addProfileValue(profile, "Current Semester", "Loading...");
+    addProfileValue(profile, "Phone Number", "Loading...");
+    addProfileValue(profile, "Skills", "Loading...");
+
+    JPanel wrapper = new JPanel(new BorderLayout());
+    wrapper.setOpaque(false);
+    wrapper.add(profile, BorderLayout.NORTH);
+
+    page.add(wrapper, BorderLayout.CENTER);
+
+    return page;
+}
+
+private void addProfileValue(
+        JPanel panel, String fieldName, String initialValue) {
+
+    panel.add(label(fieldName, 13, true, TEXT));
+
+    JLabel valueLabel = label(
+            initialValue == null || initialValue.isBlank()
+                    ? "Not provided"
+                    : initialValue,
+            13, false, MUTED
+    );
+
+    profileValues.put(fieldName, valueLabel);
+    panel.add(valueLabel);
+}
 
     private static String unavailableProfileValue() {
         return "Not available from current backend";
     }
+    
+    private void loadMyProfile() {
+
+    if (token == null || token.isBlank()) {
+        JOptionPane.showMessageDialog(
+                this,
+                "Your session is missing. Please log in again.",
+                "Profile Error",
+                JOptionPane.ERROR_MESSAGE
+        );
+        return;
+    }
+
+    async(
+        () -> client.sendListRequest("GET_MY_PROFILE", token),
+
+        response -> {
+            if (!response.success) {
+                JOptionPane.showMessageDialog(
+                        this,
+                        "Unable to load profile: "
+                                + response.errorMessage,
+                        "Profile Error",
+                        JOptionPane.ERROR_MESSAGE
+                );
+                return;
+            }
+
+            if (response.lines.isEmpty()) {
+                JOptionPane.showMessageDialog(
+                        this,
+                        "The server returned no student profile.",
+                        "Profile Error",
+                        JOptionPane.WARNING_MESSAGE
+                );
+                return;
+            }
+
+            String[] fields =
+                    response.lines.get(0).split("\\|", -1);
+
+            if (fields.length < 10) {
+                JOptionPane.showMessageDialog(
+                        this,
+                        "The profile response has an unexpected format. "
+                                + "Received " + fields.length + " fields.",
+                        "Profile Error",
+                        JOptionPane.ERROR_MESSAGE
+                );
+                return;
+            }
+
+            setProfileValue("PRN / Student ID", fields[0]);
+            setProfileValue("Full Name", fields[1]);
+            setProfileValue("Email Address", fields[2]);
+            setProfileValue("Department / Branch", fields[3]);
+            setProfileValue("Current CGPA", fields[4]);
+            setProfileValue("Passing Year", fields[5]);
+            setProfileValue("Active Backlogs", fields[6]);
+            setProfileValue("Current Semester", fields[7]);
+            setProfileValue("Phone Number", fields[8]);
+            setProfileValue("Skills", fields[9]);
+        },
+
+        error -> JOptionPane.showMessageDialog(
+                this,
+                "Could not contact the backend: "
+                        + error.getMessage(),
+                "Connection Error",
+                JOptionPane.ERROR_MESSAGE
+        )
+    );
+}
+
+private void setProfileValue(String fieldName, String value) {
+    JLabel valueLabel = profileValues.get(fieldName);
+
+    if (valueLabel != null) {
+        valueLabel.setText(
+                value == null || value.isBlank()
+                        ? "Not provided"
+                        : value
+        );
+    }
+}
 
     private JPanel reportsPage() {
         JPanel page = page();
