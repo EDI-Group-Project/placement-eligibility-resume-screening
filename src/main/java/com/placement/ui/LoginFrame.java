@@ -892,7 +892,7 @@ public class LoginFrame extends JFrame {
     static class RoundedPanel
             extends JPanel {
         private final int radius;
-        public RoundedPanel(
+        RoundedPanel(
                 int radius) {
             this.radius = radius;
             setOpaque(false);

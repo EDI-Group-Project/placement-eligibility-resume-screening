@@ -1,3 +1,4 @@
+package com.placement.ui;
 import javax.swing.*;
 
 import javax.swing.border.EmptyBorder;
@@ -39,27 +40,18 @@ public class AdminDashboard extends JFrame {
     private DefaultTableModel userModel;
 
 
-
     public AdminDashboard() {
-
-
-
+        this("Admin", "");
+    }
+    public AdminDashboard(String displayName, String sessionToken) {
         setTitle("Placement Eligibility Portal - Admin Dashboard");
-
         setSize(1250, 750);
-
         setMinimumSize(new Dimension(1100, 650));
-
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-
         setLocationRelativeTo(null);
 
-
-
         loadSampleData();
-
         buildUI();
-
     }
 
 
