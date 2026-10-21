@@ -2107,109 +2107,138 @@ private void refreshUsers() {
 
 
 
-    private void addUser() {
-
-
-
-        JTextField name = new JTextField();
-
-        JTextField username = new JTextField();
-
-
-
-        JComboBox<String> role =
-
-                new JComboBox<>(
-
-                        new String[]{
-
-                                "ADMIN",
-
-                                "TPO",
-
-                                "TPC",
-
-                                "DIRECTOR",
-
-                                "DEAN"
-
-                        }
-
-                );
-
-
-
-        JPanel form = new JPanel(
-
-                new GridLayout(3, 2, 8, 8)
-
-        );
-
-
-
-        form.add(new JLabel("Name"));
-
-        form.add(name);
-
-
-
-        form.add(new JLabel("Username"));
-
-        form.add(username);
-
-
-
-        form.add(new JLabel("Role"));
-
-        form.add(role);
-
-
-
-        int result = JOptionPane.showConfirmDialog(
-
+    
+private void addUser() {
+    if (sessionToken == null || sessionToken.isBlank()) {
+        JOptionPane.showMessageDialog(
                 this,
+                "Your session is missing. Please log in again.",
+                "Authentication Error",
+                JOptionPane.ERROR_MESSAGE
+        );
+        return;
+    }
 
-                form,
+    JTextField nameField = new JTextField(18);
+    JTextField emailField = new JTextField(18);
+    JPasswordField passwordField = new JPasswordField(18);
+    JComboBox<String> roleBox = new JComboBox<>(new String[]{
+        "ADMIN", "TPO", "TPC", "DIRECTOR", "DEAN"
+    });
+    JTextField departmentField = new JTextField(18);
+    JTextField phoneField = new JTextField(18);
 
-                "Add User",
+    JPanel form = new JPanel(new GridLayout(6, 2, 8, 8));
 
-                JOptionPane.OK_CANCEL_OPTION
+    form.add(new JLabel("Full Name:"));
+    form.add(nameField);
 
+    form.add(new JLabel("Email:"));
+    form.add(emailField);
+
+    form.add(new JLabel("Password (minimum 8 characters):"));
+    form.add(passwordField);
+
+    form.add(new JLabel("Role:"));
+    form.add(roleBox);
+
+    form.add(new JLabel("Department:"));
+    form.add(departmentField);
+
+    form.add(new JLabel("Phone:"));
+    form.add(phoneField);
+
+    int choice = JOptionPane.showConfirmDialog(
+            this,
+            form,
+            "Add Faculty / Staff User",
+            JOptionPane.OK_CANCEL_OPTION,
+            JOptionPane.PLAIN_MESSAGE
+    );
+
+    if (choice != JOptionPane.OK_OPTION) {
+        return;
+    }
+
+    String name = nameField.getText().trim();
+    String email = emailField.getText().trim();
+    String password = new String(passwordField.getPassword());
+    String role = roleBox.getSelectedItem().toString();
+    String department = departmentField.getText().trim();
+    String phone = phoneField.getText().trim();
+
+    if (name.isBlank() || email.isBlank() || password.isBlank()) {
+        JOptionPane.showMessageDialog(
+                this,
+                "Name, email and password are required.",
+                "Validation Error",
+                JOptionPane.WARNING_MESSAGE
+        );
+        return;
+    }
+
+    if (!email.matches("^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")) {
+        JOptionPane.showMessageDialog(
+                this,
+                "Please enter a valid email address.",
+                "Validation Error",
+                JOptionPane.WARNING_MESSAGE
+        );
+        return;
+    }
+
+    if (password.length() < 8) {
+        JOptionPane.showMessageDialog(
+                this,
+                "Password must contain at least 8 characters.",
+                "Validation Error",
+                JOptionPane.WARNING_MESSAGE
+        );
+        return;
+    }
+
+    try {
+        SocketClient.Response response = client.sendRequest(
+                "ADD_FACULTY",
+                sessionToken,
+                name,
+                email,
+                password,
+                role,
+                department,
+                phone
         );
 
-
-
-        if (result != JOptionPane.OK_OPTION) {
-
+        if (!response.success) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    "User could not be added: " + response.payload,
+                    "Add User Failed",
+                    JOptionPane.ERROR_MESSAGE
+            );
             return;
-
         }
 
+        JOptionPane.showMessageDialog(
+                this,
+                "User added successfully. ID: " + response.payload,
+                "Success",
+                JOptionPane.INFORMATION_MESSAGE
+        );
 
-
-        users.add(new String[]{
-
-                "U" + String.format(
-
-                        "%03d",
-
-                        users.size() + 1
-
-                ),
-
-                name.getText(),
-
-                username.getText(),
-
-                role.getSelectedItem().toString()
-
-        });
-
-
-
+        // Reload users from MySQL through the backend.
         refreshUsers();
 
+    } catch (Exception ex) {
+        JOptionPane.showMessageDialog(
+                this,
+                "Unable to add user: " + ex.getMessage()
+                        + "\nCheck that the backend server is running.",
+                "Connection Error",
+                JOptionPane.ERROR_MESSAGE
+        );
     }
+}
 
 
 
