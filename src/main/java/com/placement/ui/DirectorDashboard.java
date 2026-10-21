@@ -1400,13 +1400,19 @@ static final class Kit {
         }
     }
 
-    static final class Card extends Fill {
+    static final class Card extends JPanel {
         Card() {
             super(new BorderLayout(0, 10));
             setOpaque(true);
+            setAlignmentX(Component.LEFT_ALIGNMENT);
             setBackground(Color.WHITE);
             setBorder(javax.swing.BorderFactory.createCompoundBorder(
                     new LineBorder(BORDER, 1), new EmptyBorder(14, 16, 14, 16)));
+        }
+
+        @Override
+        public Dimension getMaximumSize() {
+            return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);
         }
     }
 

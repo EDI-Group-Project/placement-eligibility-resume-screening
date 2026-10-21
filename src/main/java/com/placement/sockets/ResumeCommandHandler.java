@@ -24,6 +24,8 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * Socket commands for the resume module. ClientHandler delegates to this class
@@ -57,6 +59,8 @@ import java.util.Set;
  *     endless line (BufferedReader.readLine() has no limit).
  */
 public class ResumeCommandHandler {
+
+    private static final Logger LOGGER = Logger.getLogger(ResumeCommandHandler.class.getName());
 
     private static final Set<String> COMMANDS = Set.of("UPLOAD_RESUME", "GET_ATS_FEEDBACK", "SCREEN_STUDENT", "RANK_CANDIDATES", "DOWNLOAD_RESUME", "GET_RESUME_STATUS",
             "EXPORT_STUDENTS", "GET_JOB_APPLICANTS", "EXPORT_JOB_APPLICANTS", "UPLOAD_RESUME_BATCH", "GET_RESUME_BATCH");
@@ -132,10 +136,14 @@ public class ResumeCommandHandler {
         } catch (IllegalArgumentException e) {
             writer.println("FAILED|" + e.getMessage());            // validation messages are written for end users
         } catch (SQLException e) {
-            System.out.println("Database error in " + command + ": " + e.getMessage());
+            // Do not log SQLException messages: drivers may include database URLs, hosts, or credentials.
+            LOGGER.log(Level.WARNING, "Database operation failed for command {0} (SQLState={1}, code={2})",
+                    new Object[]{command, e.getSQLState(), e.getErrorCode()});
             writer.println("FAILED|Could not complete the request. Please try again.");
         } catch (Exception e) {                                     // anything else: answer instead of dropping the connection
-            System.out.println("Error in " + command + ": " + e);
+            // Avoid printing exception messages to stdout; they may contain internal details or secrets.
+            LOGGER.log(Level.SEVERE, "Unexpected error while processing command {0} ({1})",
+                    new Object[]{command, e.getClass().getSimpleName()});
             writer.println("FAILED|Could not complete the request. Please try again.");
         }
     }
@@ -277,7 +285,7 @@ public class ResumeCommandHandler {
         return role != null && STAFF_ROLES.contains(role.toUpperCase(Locale.ROOT));
     }
 
-    /** The check every staff command starts with, before it reads anything else from the request. */
+    /** Check staff permissions after consuming the request payload, so a rejected client can read its denial cleanly. */
     private static boolean requireStaff(String token, PrintWriter writer) {
         if (isStaff(token)) return true;
         writer.println(DENIED);
@@ -285,7 +293,8 @@ public class ResumeCommandHandler {
     }
 
     private void exportStudents(BufferedReader reader, PrintWriter writer, String token) throws Exception {
-        if (!requireStaff(token, writer)) return;
+        // Consume the complete request before rejecting a role. Closing a socket with unread client data can
+        // trigger a TCP reset on Windows, causing the client to see SocketException instead of FAILED|...
         String search = readBoundedLine(reader, MAX_SHORT_LINE);
         String dept = readBoundedLine(reader, MAX_SHORT_LINE);
         int year = lenientInt(readBoundedLine(reader, MAX_SHORT_LINE));
@@ -294,6 +303,7 @@ public class ResumeCommandHandler {
         int semester = lenientInt(readBoundedLine(reader, MAX_SHORT_LINE));
         String sortField = readBoundedLine(reader, MAX_SHORT_LINE);
         boolean ascending = Boolean.parseBoolean(readBoundedLine(reader, MAX_SHORT_LINE));
+        if (!requireStaff(token, writer)) return;
         // Read exactly like SEARCH_SORT_FILTER_STUDENTS in ClientHandler (0 means "no filter"), so the file always equals the table.
         List<Student> students = studentService.query(search, dept, year == 0 ? -1 : year, minCgpa,
                 maxBacklogs == 0 ? -1 : maxBacklogs, semester == 0 ? -1 : semester, sortField, ascending);
