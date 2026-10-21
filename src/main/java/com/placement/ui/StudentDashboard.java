@@ -61,7 +61,7 @@ public class StudentDashboard extends JFrame {
     private final DefaultTableModel applicationsModel = model(new String[]{
             "Job ID", "Company", "Role", "Status", "Screening Score", "Applied At"});
     private final DefaultTableModel reportStatusModel = model(new String[]{"Application Status", "Count", "Share"});
-    private final DefaultTableModel notificationsModel = model(new String[]{"Date", "Subject", "Message", "Related Drive"});
+    private final DefaultTableModel notificationsModel = model(new String[]{"Date", "Subject", "Message"});
 
     private final JTable jobsTable = new JTable(jobsModel);
     private final JTable applicationsTable = new JTable(applicationsModel);
@@ -98,6 +98,8 @@ public class StudentDashboard extends JFrame {
     private JComboBox<JobOption> screeningJobBox;
     private JPanel reportsSummaryCards;
     private StatusChartPanel overviewStatusChart;
+    private ApplicationPieChartPanel overviewPieChart;
+    private CompanyOpportunitiesChartPanel companyOpportunitiesChart;
 
     public StudentDashboard(String name, String email, String token) {
         this.name = name == null || name.isBlank() ? "Student" : name;
@@ -221,15 +223,47 @@ public class StudentDashboard extends JFrame {
         cards.add(metricCard("My Applications", overviewApplicationsValue));
         center.add(cards, BorderLayout.NORTH);
 
-        JPanel lower = new JPanel(new BorderLayout());
-        lower.setOpaque(false);
-        JPanel chartCard = whiteCard();
-        chartCard.setLayout(new BorderLayout(0, 8));
-        chartCard.add(label("Application Status Overview", 16, true, GREEN), BorderLayout.NORTH);
+        JPanel charts = new JPanel();
+        charts.setOpaque(false);
+        charts.setLayout(new BoxLayout(charts, BoxLayout.Y_AXIS));
+
+        JPanel statusCharts = new JPanel(new GridLayout(1, 2, 14, 0));
+        statusCharts.setOpaque(false);
+        statusCharts.setPreferredSize(new Dimension(900, 275));
+        statusCharts.setMinimumSize(new Dimension(500, 240));
+
+        JPanel statusBarCard = whiteCard();
+        statusBarCard.setLayout(new BorderLayout(0, 8));
+        statusBarCard.add(label("Applications by Status", 16, true, GREEN), BorderLayout.NORTH);
         overviewStatusChart = new StatusChartPanel();
-        chartCard.add(overviewStatusChart, BorderLayout.CENTER);
-        lower.add(chartCard, BorderLayout.CENTER);
-        center.add(lower, BorderLayout.CENTER);
+        statusBarCard.add(overviewStatusChart, BorderLayout.CENTER);
+        statusCharts.add(statusBarCard);
+
+        JPanel statusPieCard = whiteCard();
+        statusPieCard.setLayout(new BorderLayout(0, 8));
+        statusPieCard.add(label("Application Status Share", 16, true, GREEN), BorderLayout.NORTH);
+        overviewPieChart = new ApplicationPieChartPanel();
+        statusPieCard.add(overviewPieChart, BorderLayout.CENTER);
+        statusCharts.add(statusPieCard);
+        charts.add(statusCharts);
+        charts.add(Box.createVerticalStrut(14));
+
+        JPanel companyCard = whiteCard();
+        companyCard.setLayout(new BorderLayout(0, 8));
+        companyCard.add(label("Available Placement Roles by Company", 16, true, GREEN), BorderLayout.NORTH);
+        companyOpportunitiesChart = new CompanyOpportunitiesChartPanel();
+        companyCard.add(companyOpportunitiesChart, BorderLayout.CENTER);
+        companyCard.setPreferredSize(new Dimension(900, 250));
+        companyCard.setMinimumSize(new Dimension(500, 220));
+        companyCard.setMaximumSize(new Dimension(Integer.MAX_VALUE, 250));
+        charts.add(companyCard);
+
+        JScrollPane chartScroll = new JScrollPane(charts);
+        chartScroll.setBorder(BorderFactory.createEmptyBorder());
+        chartScroll.setOpaque(false);
+        chartScroll.getViewport().setOpaque(false);
+        chartScroll.getVerticalScrollBar().setUnitIncrement(16);
+        center.add(chartScroll, BorderLayout.CENTER);
         page.add(center, BorderLayout.CENTER);
         overviewStatus = label("Loading live data…", 12, false, MUTED);
         page.add(overviewStatus, BorderLayout.SOUTH);
@@ -463,10 +497,18 @@ public class StudentDashboard extends JFrame {
                 "This page displays general announcements marked for all students. The current server returns shared notification history, not a verified personal feed, so job-specific or individually targeted notifications are not shown here."), BorderLayout.NORTH);
 
         styleTable(notificationsTable);
-        notificationsTable.setRowHeight(34);
+        notificationsTable.setRowHeight(38);
         notificationsTable.setAutoResizeMode(JTable.AUTO_RESIZE_LAST_COLUMN);
+        notificationsTable.setFillsViewportHeight(true);
+        notificationsTable.setColumnSelectionAllowed(false);
+        notificationsTable.setDefaultRenderer(Object.class, new NotificationCellRenderer());
+        notificationsTable.getColumnModel().getColumn(0).setPreferredWidth(125);
+        notificationsTable.getColumnModel().getColumn(1).setPreferredWidth(190);
+        notificationsTable.getColumnModel().getColumn(2).setPreferredWidth(650);
         JScrollPane scroll = new JScrollPane(notificationsTable);
         scroll.setBorder(BorderFactory.createLineBorder(BORDER));
+        scroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
+        scroll.getVerticalScrollBar().setUnitIncrement(16);
         body.add(scroll, BorderLayout.CENTER);
         notificationsStatus = label("Select Refresh Notifications to load announcements.", 12, false, MUTED);
         body.add(notificationsStatus, BorderLayout.SOUTH);
@@ -630,6 +672,29 @@ private void setProfileValue(String fieldName, String value) {
     }
 }
 
+    /** Wraps notification text and grows row height so long messages remain readable. */
+    private final class NotificationCellRenderer extends JTextArea implements TableCellRenderer {
+        private NotificationCellRenderer() {
+            setLineWrap(true);
+            setWrapStyleWord(true);
+            setOpaque(true);
+            setBorder(new EmptyBorder(5, 7, 5, 7));
+        }
+
+        @Override public Component getTableCellRendererComponent(JTable table, Object value,
+                boolean isSelected, boolean hasFocus, int row, int column) {
+            setText(value == null ? "" : value.toString());
+            setFont(table.getFont());
+            setForeground(isSelected ? table.getSelectionForeground() : table.getForeground());
+            setBackground(isSelected ? table.getSelectionBackground() : table.getBackground());
+            int width = Math.max(80, table.getColumnModel().getColumn(column).getWidth() - 14);
+            setSize(width, Short.MAX_VALUE);
+            int needed = Math.max(38, getPreferredSize().height + 2);
+            if (table.getRowHeight(row) != needed) table.setRowHeight(row, needed);
+            return this;
+        }
+    }
+
     private JPanel reportsPage() {
         JPanel page = page();
         JPanel top = new JPanel(new BorderLayout());
@@ -644,27 +709,58 @@ private void setProfileValue(String fieldName, String value) {
         top.add(refresh, BorderLayout.EAST);
         page.add(top, BorderLayout.NORTH);
 
-        JPanel body = new JPanel(new BorderLayout(0, 14));
-        body.setOpaque(false);
+        // Stack report sections vertically inside a scroll pane to prevent cards/tables
+        // from competing for the same BorderLayout space at different window sizes.
+        JPanel sections = new JPanel();
+        sections.setOpaque(false);
+        sections.setLayout(new BoxLayout(sections, BoxLayout.Y_AXIS));
+
         reportsSummaryCards = new JPanel(new GridLayout(1, 3, 14, 0));
         reportsSummaryCards.setOpaque(false);
-        body.add(reportsSummaryCards, BorderLayout.NORTH);
+        reportsSummaryCards.setAlignmentX(Component.LEFT_ALIGNMENT);
+        reportsSummaryCards.setMaximumSize(new Dimension(Integer.MAX_VALUE, 96));
+        reportsSummaryCards.setPreferredSize(new Dimension(900, 96));
+        sections.add(reportsSummaryCards);
+        sections.add(Box.createVerticalStrut(14));
 
         JPanel statusCard = whiteCard();
         statusCard.setLayout(new BorderLayout(0, 8));
+        statusCard.setAlignmentX(Component.LEFT_ALIGNMENT);
+        statusCard.setPreferredSize(new Dimension(900, 190));
+        statusCard.setMinimumSize(new Dimension(500, 170));
+        statusCard.setMaximumSize(new Dimension(Integer.MAX_VALUE, 220));
         statusCard.add(label("Application Status Breakdown", 16, true, GREEN), BorderLayout.NORTH);
         styleTable(reportStatusTable);
-        statusCard.add(new JScrollPane(reportStatusTable), BorderLayout.CENTER);
-        body.add(statusCard, BorderLayout.CENTER);
+        reportStatusTable.setRowHeight(30);
+        reportStatusTable.setFillsViewportHeight(true);
+        JScrollPane statusScroll = new JScrollPane(reportStatusTable);
+        statusScroll.setBorder(BorderFactory.createLineBorder(BORDER));
+        statusCard.add(statusScroll, BorderLayout.CENTER);
+        sections.add(statusCard);
+        sections.add(Box.createVerticalStrut(14));
 
         JPanel recordCard = whiteCard();
         recordCard.setLayout(new BorderLayout(0, 8));
-        recordCard.add(label("Application Screening Records", 16, true, GREEN), BorderLayout.NORTH);
+        recordCard.setAlignmentX(Component.LEFT_ALIGNMENT);
+        recordCard.setPreferredSize(new Dimension(900, 310));
+        recordCard.setMinimumSize(new Dimension(500, 260));
+        recordCard.setMaximumSize(new Dimension(Integer.MAX_VALUE, 420));
+        recordCard.add(label("Application Records", 16, true, GREEN), BorderLayout.NORTH);
         JTable reportApps = new JTable(applicationsModel);
         styleTable(reportApps);
-        recordCard.add(new JScrollPane(reportApps), BorderLayout.CENTER);
-        body.add(recordCard, BorderLayout.SOUTH);
-        page.add(body, BorderLayout.CENTER);
+        reportApps.setRowHeight(30);
+        reportApps.setFillsViewportHeight(true);
+        JScrollPane recordScroll = new JScrollPane(reportApps);
+        recordScroll.setBorder(BorderFactory.createLineBorder(BORDER));
+        recordCard.add(recordScroll, BorderLayout.CENTER);
+        sections.add(recordCard);
+
+        JScrollPane sectionsScroll = new JScrollPane(sections);
+        sectionsScroll.setBorder(BorderFactory.createEmptyBorder());
+        sectionsScroll.setOpaque(false);
+        sectionsScroll.getViewport().setOpaque(false);
+        sectionsScroll.getVerticalScrollBar().setUnitIncrement(16);
+        page.add(sectionsScroll, BorderLayout.CENTER);
         reportsStatus = label("Report summaries are calculated from GET_MY_APPLICATIONS responses.", 11, false, MUTED);
         page.add(reportsStatus, BorderLayout.SOUTH);
         updateReports();
@@ -833,8 +929,7 @@ private void setProfileValue(String fieldName, String value) {
                 notificationsModel.addRow(new Object[]{
                         createdAt.isBlank() ? "Date unavailable" : createdAt,
                         subject.isBlank() ? "Announcement" : subject,
-                        message.isBlank() ? "No message provided" : message,
-                        jobId.isBlank() ? "General" : jobId
+                        message.isBlank() ? "No message provided" : message
                 });
                 total++;
             }
@@ -1087,9 +1182,9 @@ private void setProfileValue(String fieldName, String value) {
             else if (!jobsLoadedSuccessfully || !applicationsLoadedSuccessfully) overviewStatus.setText("Some dashboard data has not loaded successfully.");
             else overviewStatus.setText("Counts and chart are based on records returned by the server.");
         }
-        if (overviewStatusChart != null) {
-            overviewStatusChart.repaint();
-        }
+        if (overviewStatusChart != null) overviewStatusChart.repaint();
+        if (overviewPieChart != null) overviewPieChart.repaint();
+        if (companyOpportunitiesChart != null) companyOpportunitiesChart.repaint();
     }
 
     private void updateReports() {
@@ -1224,109 +1319,208 @@ private void setProfileValue(String fieldName, String value) {
         void setItems(List<String> items){chips.removeAll();if(items==null||items.isEmpty()){JLabel empty=new JLabel("No items returned");empty.setForeground(MUTED);empty.setFont(empty.getFont().deriveFont(11f));chips.add(empty);}else for(String s:items){JLabel chip=new JLabel(s);chip.setFont(chip.getFont().deriveFont(11f));chip.setForeground(accent.darker());chip.setOpaque(true);chip.setBackground(new Color(accent.getRed(),accent.getGreen(),accent.getBlue(),22));chip.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(new Color(accent.getRed(),accent.getGreen(),accent.getBlue(),75)),new EmptyBorder(3,6,3,6)));chips.add(chip);}revalidate();repaint();}
     }
 
+    /** Bar chart of application statuses; all values come from GET_MY_APPLICATIONS. */
     private final class StatusChartPanel extends JPanel {
         private StatusChartPanel() {
             setOpaque(false);
-            setPreferredSize(new Dimension(400, 230));
-            setMinimumSize(new Dimension(250, 150));
+            setPreferredSize(new Dimension(400, 260));
+            setMinimumSize(new Dimension(220, 180));
         }
 
-        @Override
-        protected void paintComponent(Graphics graphics) {
+        @Override protected void paintComponent(Graphics graphics) {
             super.paintComponent(graphics);
             Graphics2D g = (Graphics2D) graphics.create();
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            int width = getWidth();
-            int height = getHeight();
+            int w = getWidth(), h = getHeight();
             if (!applicationsLoadedSuccessfully) {
-                g.setColor(MUTED);
-                g.setFont(new Font("SansSerif", Font.PLAIN, 13));
-                drawWrapped(g, "Application status chart will appear after your application records load.", 4, 22, Math.max(120, width - 8));
-                g.dispose();
-                return;
+                drawChartMessage(g, "Chart appears after application data loads.", w);
+                g.dispose(); return;
             }
-
-            int total = applicationsModel.getRowCount();
-            if (total == 0) {
-                g.setColor(TEXT);
-                g.setFont(new Font("SansSerif", Font.BOLD, 14));
-                g.drawString("No applications yet", 4, 25);
-                g.setColor(MUTED);
-                g.setFont(new Font("SansSerif", Font.PLAIN, 12));
-                drawWrapped(g,
-                        "Application details will appear here after you apply to a placement drive.",
-                        4, 49, Math.max(120, width - 8));
-                g.dispose();
-                return;
+            Map<String, Integer> counts = getApplicationStatusCounts();
+            if (counts.isEmpty()) {
+                drawChartMessage(g, "Apply to a placement drive to see your application analytics.", w);
+                g.dispose(); return;
             }
-
-            // Show each real application with its company, role and current status.
-            // Data comes directly from GET_MY_APPLICATIONS; no placeholder records are added.
-            int top = 4;
-            int rowHeight = 31;
-            int shown = Math.min(total, Math.max(1, (height - 24) / rowHeight));
-            for (int row = 0; row < shown; row++) {
-                String company = String.valueOf(applicationsModel.getValueAt(row, 1)).trim();
-                String role = String.valueOf(applicationsModel.getValueAt(row, 2)).trim();
-                String status = String.valueOf(applicationsModel.getValueAt(row, 3)).trim();
-                if (company.isBlank() || company.equalsIgnoreCase("null")) company = "Company not specified";
-                if (role.isBlank() || role.equalsIgnoreCase("null")) role = "Role not specified";
-                if (status.isBlank() || status.equalsIgnoreCase("null")) status = "Unknown";
-
-                if (row % 2 == 0) {
-                    g.setColor(new Color(246, 249, 246));
-                    g.fillRoundRect(0, top, Math.max(1, width - 4), rowHeight - 2, 7, 7);
-                }
-                g.setFont(new Font("SansSerif", Font.BOLD, 12));
-                g.setColor(TEXT);
-                String title = company + "  —  " + role;
-                int statusWidth = Math.min(112, Math.max(65, g.getFontMetrics().stringWidth(status) + 18));
-                int available = Math.max(50, width - statusWidth - 28);
-                FontMetrics titleMetrics = g.getFontMetrics();
-                while (titleMetrics.stringWidth(title) > available && title.length() > 8) {
-                    title = title.substring(0, title.length() - 4) + "…";
-                }
-                g.drawString(title, 8, top + 18);
-
-                Color statusColor = status.equalsIgnoreCase("SELECTED") || status.equalsIgnoreCase("OFFERED")
-                        ? new Color(30, 120, 65)
-                        : status.equalsIgnoreCase("REJECTED") ? new Color(175, 55, 55) : GREEN;
-                int badgeX = Math.max(8, width - statusWidth - 8);
-                g.setColor(new Color(statusColor.getRed(), statusColor.getGreen(), statusColor.getBlue(), 24));
-                g.fillRoundRect(badgeX, top + 5, statusWidth, 20, 9, 9);
-                g.setColor(statusColor);
-                g.setFont(new Font("SansSerif", Font.PLAIN, 10));
-                FontMetrics statusMetrics = g.getFontMetrics();
-                String shownStatus = status;
-                while (statusMetrics.stringWidth(shownStatus) > statusWidth - 10 && shownStatus.length() > 4) {
-                    shownStatus = shownStatus.substring(0, shownStatus.length() - 4) + "…";
-                }
-                g.drawString(shownStatus, badgeX + Math.max(5, (statusWidth - statusMetrics.stringWidth(shownStatus)) / 2), top + 19);
-                top += rowHeight;
-            }
-            if (shown < total) {
+            int left = 34, right = 12, top = 18, bottom = 42;
+            int plotW = Math.max(1, w - left - right), plotH = Math.max(1, h - top - bottom);
+            int max = counts.values().stream().mapToInt(Integer::intValue).max().orElse(1);
+            g.setFont(new Font("SansSerif", Font.PLAIN, 10));
+            // Use distinct integer tick values so labels never repeat after rounding.
+            int tickStep = Math.max(1, (int)Math.ceil(max / 4.0));
+            int axisMax = Math.max(tickStep, (int)Math.ceil(max / (double) tickStep) * tickStep);
+            for (int value = 0; value <= axisMax; value += tickStep) {
+                int y = top + plotH - (int)Math.round(value / (double) axisMax * plotH);
+                g.setColor(new Color(229, 234, 230));
+                g.drawLine(left, y, left + plotW, y);
                 g.setColor(MUTED);
-                g.setFont(new Font("SansSerif", Font.PLAIN, 11));
-                g.drawString("Showing " + shown + " of " + total + " applications", 4, height - 3);
+                g.drawString(String.valueOf(value), 4, y + 4);
+            }
+            int n = counts.size(), slot = Math.max(1, plotW / n), barW = Math.max(12, Math.min(48, slot - 14));
+            Color[] palette = {new Color(59, 130, 246), new Color(168, 85, 247), new Color(245, 158, 11), new Color(239, 68, 68), new Color(20, 184, 166), new Color(236, 72, 153), new Color(99, 102, 241), new Color(132, 204, 22)};
+            int i = 0;
+            for (Map.Entry<String, Integer> entry : counts.entrySet()) {
+                int barH = (int)Math.round((entry.getValue() / (double)axisMax) * plotH);
+                int x = left + i * slot + (slot - barW) / 2, y = top + plotH - barH;
+                Color base = palette[i % palette.length];
+                g.setColor(new Color(base.getRed(), base.getGreen(), base.getBlue(), 35));
+                g.fillRoundRect(x, top, barW, plotH, 10, 10);
+                g.setPaint(new GradientPaint(x, y, base.brighter(), x, y + Math.max(1, barH), base.darker()));
+                g.fillRoundRect(x, y, barW, barH, 10, 10);
+                g.setPaint(null);
+                g.setColor(TEXT); g.setFont(new Font("SansSerif", Font.BOLD, 11));
+                String count = String.valueOf(entry.getValue()); g.drawString(count, x + (barW - g.getFontMetrics().stringWidth(count))/2, Math.max(top + 11, y - 4));
+                g.setFont(new Font("SansSerif", Font.PLAIN, 10)); g.setColor(MUTED);
+                String name = entry.getKey();
+                if (g.getFontMetrics().stringWidth(name) > slot + 8 && name.length() > 7) name = name.substring(0, 6) + "…";
+                int labelX = left + i * slot + (slot - g.getFontMetrics().stringWidth(name))/2;
+                g.drawString(name, labelX, top + plotH + 16);
+                i++;
             }
             g.dispose();
         }
+    }
 
-        private void drawWrapped(Graphics2D g, String text, int x, int y, int maxWidth) {
-            FontMetrics fm = g.getFontMetrics();
-            StringBuilder line = new StringBuilder();
-            for (String word : text.split("\\s+")) {
-                String candidate = line.length() == 0 ? word : line + " " + word;
-                if (fm.stringWidth(candidate) > maxWidth && line.length() > 0) {
-                    g.drawString(line.toString(), x, y);
-                    y += fm.getHeight() + 3;
-                    line = new StringBuilder(word);
-                } else {
-                    line = new StringBuilder(candidate);
-                }
-            }
-            if (line.length() > 0) g.drawString(line.toString(), x, y);
+    /** Pie chart of the same live application-status counts. */
+    private final class ApplicationPieChartPanel extends JPanel {
+        private ApplicationPieChartPanel() {
+            setOpaque(false);
+            setPreferredSize(new Dimension(400, 260));
+            setMinimumSize(new Dimension(220, 180));
         }
+
+        @Override protected void paintComponent(Graphics graphics) {
+            super.paintComponent(graphics);
+            Graphics2D g = (Graphics2D) graphics.create();
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            int w = getWidth(), h = getHeight();
+            if (!applicationsLoadedSuccessfully) {
+                drawChartMessage(g, "Chart appears after application data loads.", w);
+                g.dispose(); return;
+            }
+            Map<String, Integer> counts = getApplicationStatusCounts();
+            int total = counts.values().stream().mapToInt(Integer::intValue).sum();
+            if (total == 0) {
+                drawChartMessage(g, "No application records yet.", w);
+                g.dispose(); return;
+            }
+            Color[] palette = {new Color(59, 130, 246), new Color(168, 85, 247), new Color(245, 158, 11), new Color(239, 68, 68), new Color(20, 184, 166), new Color(236, 72, 153), new Color(99, 102, 241), new Color(132, 204, 22)};
+            int diameter = Math.max(90, Math.min(Math.min(h - 24, w / 2), 190));
+            int x = Math.max(4, (w / 2 - diameter) / 2), y = Math.max(4, (h - diameter) / 2);
+            int startAngle = 90, i = 0;
+            for (int value : counts.values()) {
+                int extent = (int)Math.round(value * 360.0 / total);
+                g.setColor(palette[i % palette.length]);
+                g.fillArc(x, y, diameter, diameter, startAngle, -extent);
+                startAngle -= extent; i++;
+            }
+            // Clean donut centre makes the plot easier to scan at a glance.
+            int hole = (int)(diameter * 0.54);
+            int hx = x + (diameter - hole) / 2, hy = y + (diameter - hole) / 2;
+            g.setColor(Color.WHITE); g.fillOval(hx, hy, hole, hole);
+            g.setColor(TEXT); g.setFont(new Font("SansSerif", Font.BOLD, 19));
+            String totalText = String.valueOf(total);
+            g.drawString(totalText, hx + (hole - g.getFontMetrics().stringWidth(totalText)) / 2, hy + hole / 2 + 2);
+            g.setColor(MUTED); g.setFont(new Font("SansSerif", Font.PLAIN, 9));
+            String appsText = "APPS";
+            g.drawString(appsText, hx + (hole - g.getFontMetrics().stringWidth(appsText)) / 2, hy + hole / 2 + 16);
+            int legendX = Math.min(w / 2 + 4, x + diameter + 12), legendY = Math.max(18, (h - counts.size() * 23) / 2);
+            i = 0;
+            for (Map.Entry<String, Integer> entry : counts.entrySet()) {
+                int yy = legendY + i * 23;
+                g.setColor(palette[i % palette.length]); g.fillRoundRect(legendX, yy - 9, 10, 10, 3, 3);
+                g.setColor(TEXT); g.setFont(new Font("SansSerif", Font.PLAIN, 11));
+                String legend = entry.getKey() + "  " + entry.getValue() + " (" + Math.round(entry.getValue() * 100.0 / total) + "%)";
+                int maxWidth = Math.max(30, w - legendX - 8);
+                FontMetrics fm = g.getFontMetrics();
+                while (fm.stringWidth(legend) > maxWidth && legend.length() > 8) legend = legend.substring(0, legend.length() - 4) + "…";
+                g.drawString(legend, legendX + 15, yy);
+                i++;
+            }
+            g.dispose();
+        }
+    }
+
+
+    /** Counts available placement roles per company using live GET_JOBS records. */
+    private final class CompanyOpportunitiesChartPanel extends JPanel {
+        private CompanyOpportunitiesChartPanel() {
+            setOpaque(false);
+            setPreferredSize(new Dimension(700, 190));
+            setMinimumSize(new Dimension(300, 150));
+        }
+
+        @Override protected void paintComponent(Graphics graphics) {
+            super.paintComponent(graphics);
+            Graphics2D g = (Graphics2D) graphics.create();
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            int w = getWidth(), h = getHeight();
+            if (!jobsLoadedSuccessfully) {
+                drawChartMessage(g, "Chart appears after placement opportunities load.", w);
+                g.dispose(); return;
+            }
+            Map<String, Integer> counts = new LinkedHashMap<>();
+            for (String[] job : allJobs) {
+                String company = valueAt(job, 1).trim();
+                if (company.isBlank()) company = "Unknown company";
+                counts.merge(company, 1, Integer::sum);
+            }
+            if (counts.isEmpty()) {
+                drawChartMessage(g, "No placement opportunities were returned by the server.", w);
+                g.dispose(); return;
+            }
+            List<Map.Entry<String, Integer>> entries = new ArrayList<>(counts.entrySet());
+            entries.sort((a, b) -> Integer.compare(b.getValue(), a.getValue()));
+            if (entries.size() > 8) entries = new ArrayList<>(entries.subList(0, 8));
+            int left = 130, right = 34, top = 10, rowH = Math.max(20, (h - top - 8) / entries.size());
+            int maxBarW = Math.max(1, w - left - right);
+            int max = entries.stream().mapToInt(Map.Entry::getValue).max().orElse(1);
+            g.setFont(new Font("SansSerif", Font.PLAIN, 11));
+            for (int i = 0; i < entries.size(); i++) {
+                Map.Entry<String, Integer> entry = entries.get(i);
+                int y = top + i * rowH;
+                String name = entry.getKey();
+                FontMetrics fm = g.getFontMetrics();
+                while (fm.stringWidth(name) > left - 12 && name.length() > 4) name = name.substring(0, name.length() - 2) + "…";
+                g.setColor(TEXT); g.drawString(name, Math.max(2, left - 8 - fm.stringWidth(name)), y + rowH / 2 + 4);
+                int barH = Math.min(16, Math.max(8, rowH - 5));
+                int barY = y + (rowH - barH) / 2;
+                g.setColor(new Color(237, 241, 247)); g.fillRoundRect(left, barY, maxBarW, barH, 10, 10);
+                int barW = (int)Math.round(maxBarW * entry.getValue() / (double)max);
+                Color[] companyPalette = {new Color(59, 130, 246), new Color(168, 85, 247), new Color(20, 184, 166), new Color(245, 158, 11), new Color(236, 72, 153), new Color(99, 102, 241), new Color(14, 165, 233), new Color(249, 115, 22)};
+                Color base = companyPalette[i % companyPalette.length];
+                g.setPaint(new GradientPaint(left, barY, base.brighter(), left + Math.max(1, barW), barY + barH, base.darker()));
+                g.fillRoundRect(left, barY, Math.max(2, barW), barH, 10, 10);
+                g.setPaint(null);
+                g.setColor(TEXT); g.drawString(String.valueOf(entry.getValue()), Math.min(w - 20, left + barW + 7), y + rowH / 2 + 4);
+            }
+            g.dispose();
+        }
+    }
+
+    private Map<String, Integer> getApplicationStatusCounts() {
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (int row = 0; row < applicationsModel.getRowCount(); row++) {
+            Object raw = applicationsModel.getValueAt(row, 3);
+            String status = raw == null ? "Unknown" : raw.toString().trim();
+            if (status.isBlank() || status.equalsIgnoreCase("null")) status = "Unknown";
+            counts.merge(status, 1, Integer::sum);
+        }
+        return counts;
+    }
+
+    private void drawChartMessage(Graphics2D g, String message, int width) {
+        g.setColor(MUTED);
+        g.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        FontMetrics fm = g.getFontMetrics();
+        int maxWidth = Math.max(100, width - 16), y = 28;
+        StringBuilder line = new StringBuilder();
+        for (String word : message.split("\\s+")) {
+            String candidate = line.length() == 0 ? word : line + " " + word;
+            if (fm.stringWidth(candidate) > maxWidth && line.length() > 0) {
+                g.drawString(line.toString(), 8, y); y += fm.getHeight() + 4; line = new StringBuilder(word);
+            } else line = new StringBuilder(candidate);
+        }
+        if (line.length() > 0) g.drawString(line.toString(), 8, y);
     }
 
     private static JPanel page() {
