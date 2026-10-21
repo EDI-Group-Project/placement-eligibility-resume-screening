@@ -64,6 +64,9 @@ public class DirectorDashboard extends JFrame {
     private final JLabel kNotices = valueLabel();
     private final Donut timelineDonut = new Donut(GREEN, AMBER, new Color(160, 168, 163));
     private final Bars deptDriveBars = new Bars(BLUE, false);
+    private final Donut dashDonut = new Donut(GREEN, AMBER, new Color(160, 168, 163)).legendBelow();
+    private final Bars dashDeptBars = new Bars(BLUE, false);
+    private final JLabel upcomingCount = muted(" ");
     private final JPanel upcomingList = new JPanel();
 
     // Drives
@@ -224,31 +227,29 @@ public class DirectorDashboard extends JFrame {
     private JPanel buildDashboardPage() {
         VStack stack = new VStack();
         stack.add(grid(4, 14,
-                kpiCard("Active Drives", kDrives, "Current job postings", GREEN),
-                kpiCard("Partner Companies", kCompanies, "Recruiting this season", BLUE),
-                kpiCard("Registered Students", kStudents, "In the placement pool", AMBER),
-                kpiCard("Notifications Sent", kNotices, "Messages to students", RED)), 16);
+                kpiCardPlain("Active Drives", kDrives, "Current job postings"),
+                kpiCardPlain("Companies", kCompanies, "Recruiting this season"),
+                kpiCardPlain("Students", kStudents, "In the placement pool"),
+                kpiCardPlain("Notifications", kNotices, "Messages to students")), 16);
+
+        Card timeline = new Card();
+        timeline.add(h2("Drive Timeline"), BorderLayout.NORTH);
+        timeline.add(dashDonut, BorderLayout.CENTER);
+        Card deptCard = new Card();
+        deptCard.add(h2("Drives by Department"), BorderLayout.NORTH);
+        deptCard.add(dashDeptBars, BorderLayout.CENTER);
+        stack.add(grid(2, 16, timeline, deptCard), 16);
 
         Card upcoming = new Card();
-        JPanel head = new JPanel(new BorderLayout(10, 0));
-        head.setOpaque(false);
-        head.add(h2("Upcoming Deadlines"), BorderLayout.WEST);
-        head.add(flow(FlowLayout.RIGHT, 10, upcomingStatus, upcomingDept), BorderLayout.EAST);
-        upcoming.add(head, BorderLayout.NORTH);
+        upcoming.add(listHead("Upcoming Deadlines", upcomingCount), BorderLayout.NORTH);
         upcomingList.setOpaque(false);
         upcomingList.setLayout(new BoxLayout(upcomingList, BoxLayout.Y_AXIS));
         upcoming.add(upcomingList, BorderLayout.CENTER);
-        upcomingStatus.addActionListener(e -> refreshDashboard());
-        upcomingDept.addActionListener(e -> refreshDashboard());
-        stack.add(upcoming, 16);
+        stack.add(upcoming, 0);
 
-        Card companies = new Card();
-        companies.add(h2("Companies at a Glance"), BorderLayout.NORTH);
         widths(companySnapshotTable, 140, 70, 260, 100, 120, 240, 120);
-        companies.add(tableScroll(companySnapshotTable, 220), BorderLayout.CENTER);
-        stack.add(companies, 0);
 
-        return pageShell("Dashboard", "A quick overview of the placement programme and upcoming drives",
+        return pageShell("Dashboard", "A quick overview of the placement programme and current opportunities",
                 refreshButton(), scrollPage(stack));
     }
 
@@ -589,6 +590,7 @@ public class DirectorDashboard extends JFrame {
         timeline.put("Closing within 7 days", soon);
         timeline.put("Closed", closed);
         timelineDonut.set(timeline, String.valueOf(jobs.size()));
+        dashDonut.set(timeline, pct(open + soon, jobs.size()));
 
         LinkedHashMap<String, Integer> perDept = new LinkedHashMap<>();
         for (String d : allDepartments()) {
@@ -599,6 +601,7 @@ public class DirectorDashboard extends JFrame {
             perDept.put(d, n);
         }
         deptDriveBars.set(perDept);
+        dashDeptBars.set(perDept);
 
         upcomingList.removeAll();
         List<Job> upcoming = new ArrayList<>();
@@ -618,6 +621,7 @@ public class DirectorDashboard extends JFrame {
         for (int i = 0; i < Math.min(6, upcoming.size()); i++) {
             upcomingList.add(upcomingRow(upcoming.get(i)));
         }
+        upcomingCount.setText(upcoming.size() + " active");
         upcomingList.revalidate();
         upcomingList.repaint();
     }
@@ -1540,6 +1544,70 @@ static final class Kit {
         return card;
     }
 
+    /** Admin-style KPI card: big dark number on the left, title and caption on the right. */
+    static Card kpiCardPlain(String title, JLabel value, String sub) {
+        Card card = new Card();
+        card.setLayout(new BorderLayout(12, 0));
+        card.setBorder(javax.swing.BorderFactory.createCompoundBorder(
+                new LineBorder(BORDER, 1), new EmptyBorder(14, 16, 14, 14)));
+        value.setFont(font(Font.BOLD, 30));
+        value.setForeground(Color.BLACK);
+        JPanel text = new JPanel();
+        text.setOpaque(false);
+        text.setLayout(new BoxLayout(text, BoxLayout.Y_AXIS));
+        JLabel t = new JLabel(title);
+        t.setFont(font(Font.BOLD, 13));
+        t.setForeground(Color.BLACK);
+        JLabel c = new JLabel(sub);
+        c.setFont(font(Font.PLAIN, 11));
+        c.setForeground(MUTED);
+        text.add(Box.createVerticalGlue());
+        text.add(t);
+        text.add(Box.createVerticalStrut(2));
+        text.add(c);
+        text.add(Box.createVerticalGlue());
+        card.add(value, BorderLayout.WEST);
+        card.add(text, BorderLayout.CENTER);
+        return card;
+    }
+
+    /** One row of a "recent items" list: bold title, muted detail, right-aligned tag. */
+    static JPanel listRow(String title, String detail, String tag, Color tagColor) {
+        JPanel row = new JPanel(new BorderLayout(10, 0));
+        row.setOpaque(false);
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
+        row.setBorder(javax.swing.BorderFactory.createCompoundBorder(
+                javax.swing.BorderFactory.createMatteBorder(0, 0, 1, 0, BORDER), new EmptyBorder(9, 0, 9, 0)));
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 62));
+        JLabel t = new JLabel(title);
+        t.setFont(font(Font.BOLD, 14));
+        t.setForeground(Color.BLACK);
+        JLabel d = new JLabel(detail);
+        d.setFont(font(Font.PLAIN, 12));
+        d.setForeground(MUTED);
+        JPanel left = new JPanel();
+        left.setOpaque(false);
+        left.setLayout(new BoxLayout(left, BoxLayout.Y_AXIS));
+        left.add(t);
+        left.add(Box.createVerticalStrut(3));
+        left.add(d);
+        JLabel g = new JLabel(tag);
+        g.setFont(font(Font.BOLD, 12));
+        g.setForeground(tagColor);
+        row.add(left, BorderLayout.CENTER);
+        row.add(g, BorderLayout.EAST);
+        return row;
+    }
+
+    /** Card header with a title on the left and a small muted count on the right. */
+    static JPanel listHead(String title, JLabel right) {
+        JPanel head = new JPanel(new BorderLayout(10, 0));
+        head.setOpaque(false);
+        head.add(h2(title), BorderLayout.WEST);
+        head.add(right, BorderLayout.EAST);
+        return head;
+    }
+
     /** Alternative KPI card: coloured top edge, title above a big number. */
     static Card kpiCardTop(String title, JLabel value, String sub, Color accent) {
         Card card = new Card();
@@ -1581,11 +1649,19 @@ static final class Kit {
         private final LinkedHashMap<String, Integer> data = new LinkedHashMap<>();
         private final Color[] colors;
         private String center = "";
+        private boolean below;
 
         Donut(Color... colors) {
             this.colors = colors;
             setOpaque(false);
             setPreferredSize(new Dimension(300, 190));
+        }
+
+        /** Draws the legend in a row under the ring (admin dashboard look). */
+        Donut legendBelow() {
+            below = true;
+            setPreferredSize(new Dimension(300, 215));
+            return this;
         }
 
         void set(Map<String, Integer> values, String centerText) {
@@ -1604,9 +1680,9 @@ static final class Kit {
 
             int total = 0;
             for (int v : data.values()) total += Math.max(0, v);
-            int d = Math.min(getHeight() - 20, 150);
+            int d = below ? Math.min(getHeight() - 62, 120) : Math.min(getHeight() - 20, 150);
             int x = 14;
-            int y = (getHeight() - d) / 2;
+            int y = below ? 8 : (getHeight() - d) / 2;
             float sw = d * 0.22f;
 
             if (total == 0) {
@@ -1638,6 +1714,28 @@ static final class Kit {
             FontMetrics fm = g2.getFontMetrics();
             g2.drawString(center, x + (d - fm.stringWidth(center)) / 2, y + d / 2 + fm.getAscent() / 2 - 2);
 
+            if (below) {
+                int bx = x + 6;
+                int by = y + d + 22;
+                i = 0;
+                g2.setFont(font(Font.PLAIN, 12));
+                FontMetrics lm = g2.getFontMetrics();
+                for (Map.Entry<String, Integer> e : data.entrySet()) {
+                    String txt = e.getKey() + " (" + e.getValue() + ")";
+                    if (bx + 20 + lm.stringWidth(txt) > getWidth() && bx > x + 6) {
+                        bx = x + 6;
+                        by += 22;
+                    }
+                    g2.setColor(colors[i % colors.length]);
+                    g2.fillRect(bx, by - 10, 12, 12);
+                    g2.setColor(TEXT);
+                    g2.drawString(txt, bx + 18, by);
+                    bx += 18 + lm.stringWidth(txt) + 28;
+                    i++;
+                }
+                g2.dispose();
+                return;
+            }
             int ly = y + Math.max(10, d / 2 - data.size() * 12);
             int lx = x + d + 22;
             i = 0;

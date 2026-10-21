@@ -64,6 +64,13 @@ public class DeanDashboard extends JFrame {
     private final JLabel kAttention = valueLabel();
     private final JLabel kBacklogs = valueLabel();
     private final Donut standingDonut = new Donut(GREEN, AMBER, RED);
+    private final Donut dashDonut = new Donut(GREEN, AMBER, RED).legendBelow();
+    private final Bars dashDeptBars = new Bars(BLUE, false);
+    private final JLabel kGood = valueLabel();
+    private final JLabel kDrives = valueLabel();
+    private final JLabel kReady = valueLabel();
+    private final JPanel attentionList = new JPanel();
+    private final JLabel attentionCount = muted(" ");
     private final Bars cgpaBars = new Bars(BLUE, false);
     private final DefaultTableModel attentionModel = model(
             new String[]{"PRN", "Name", "Department", "CGPA", "Backlogs", "Standing"},
@@ -227,32 +234,62 @@ public class DeanDashboard extends JFrame {
     private JPanel buildDashboardPage() {
         VStack stack = new VStack();
         stack.add(grid(4, 14,
-                kpiCard("Total Students", kTotal, "Registered students", BLUE),
-                kpiCard("Average CGPA", kAvg, "Across all departments", GREEN),
-                kpiCard("Needs Attention", kAttention, "Outside CGPA/backlog limits", RED),
-                kpiCard("With Backlogs", kBacklogs, "Students with active backlogs", AMBER)), 16);
+                kpiCardPlain("Total Students", kTotal, "Registered students"),
+                kpiCardPlain("Good Standing", kGood, "Within CGPA/backlog limits"),
+                kpiCardPlain("Open Drives", kDrives, "Active job postings"),
+                kpiCardPlain("Readiness", kReady, "Overall good standing")), 16);
+
+        Card standingCard = new Card();
+        standingCard.add(h2("Academic Standing"), BorderLayout.NORTH);
+        standingCard.add(dashDonut, BorderLayout.CENTER);
+        Card deptCard = new Card();
+        deptCard.add(h2("Students by Department"), BorderLayout.NORTH);
+        deptCard.add(dashDeptBars, BorderLayout.CENTER);
+        stack.add(grid(2, 16, standingCard, deptCard), 16);
 
         Card attention = new Card();
-        JPanel head = new JPanel(new BorderLayout(10, 0));
-        head.setOpaque(false);
-        head.add(h2("Students Needing Attention"), BorderLayout.WEST);
-        head.add(flow(FlowLayout.RIGHT, 10, attentionStanding, attentionDept), BorderLayout.EAST);
-        attention.add(head, BorderLayout.NORTH);
+        attention.add(listHead("Students Needing Attention", attentionCount), BorderLayout.NORTH);
+        attentionList.setOpaque(false);
+        attentionList.setLayout(new BoxLayout(attentionList, BoxLayout.Y_AXIS));
+        attention.add(attentionList, BorderLayout.CENTER);
+        stack.add(attention, 0);
+
+        // tables below are still filled for the other pages
         statusColumn(attentionTable, 5);
         widths(attentionTable, 90, 170, 120, 70, 80, 130);
-        attention.add(tableScroll(attentionTable, 230), BorderLayout.CENTER);
-        attentionStanding.addActionListener(e -> applyAttentionFilter());
-        attentionDept.addActionListener(e -> applyAttentionFilter());
-        stack.add(attention, 16);
-
-        Card snapshot = new Card();
-        snapshot.add(h2("Department Snapshot"), BorderLayout.NORTH);
         widths(deptSnapshotTable, 160, 80, 90, 110, 120, 120);
-        snapshot.add(tableScroll(deptSnapshotTable, 200), BorderLayout.CENTER);
-        stack.add(snapshot, 0);
 
-        return pageShell("Dashboard", "Academic standing of the student batch at a glance",
+        return pageShell("Dashboard", "A quick overview of academic standing and current opportunities",
                 refreshButton(), scrollPage(stack));
+    }
+
+    private void refreshDashboardView(int good, int total, List<Student> flagged) {
+        kGood.setText(String.valueOf(good));
+        int open = 0;
+        for (Job jb : jobs) {
+            if (!driveStatus(jb).equals("Closed")) open++;
+        }
+        kDrives.setText(String.valueOf(open));
+        kReady.setText(pct(good, total));
+
+        LinkedHashMap<String, Integer> deptData = new LinkedHashMap<>();
+        for (Map.Entry<String, List<Student>> e : byDepartment().entrySet()) {
+            deptData.put(e.getKey(), e.getValue().size());
+        }
+        dashDeptBars.set(deptData);
+
+        attentionList.removeAll();
+        attentionCount.setText(flagged.size() + " flagged");
+        if (flagged.isEmpty()) attentionList.add(muted("No students need attention."));
+        for (int i = 0; i < Math.min(6, flagged.size()); i++) {
+            Student s = flagged.get(i);
+            String st = standing(s);
+            attentionList.add(listRow(s.name() + BULLET + s.dept(),
+                    "CGPA " + fmt1(s.cgpa()) + BULLET + s.backlogs() + " backlog(s)" + BULLET + st,
+                    s.prn(), MUTED));
+        }
+        attentionList.revalidate();
+        attentionList.repaint();
     }
 
     private JPanel buildOverviewPage() {
@@ -603,6 +640,7 @@ public class DeanDashboard extends JFrame {
         standingData.put("Needs Attention", attention);
         standingData.put("At Risk", risk);
         standingDonut.set(standingData, pct(good, total));
+        dashDonut.set(standingData, pct(good, total));
 
         LinkedHashMap<String, Integer> cgpaData = new LinkedHashMap<>();
         cgpaData.put("Below 6.0", bands[0]);
@@ -618,6 +656,7 @@ public class DeanDashboard extends JFrame {
             if (!standing(s).equals("Good Standing")) flagged.add(s);
         }
         flagged.sort(Comparator.comparingDouble(Student::cgpa));
+        refreshDashboardView(good, total, flagged);
         attentionModel.setRowCount(0);
         for (Student s : flagged) {
             attentionModel.addRow(new Object[]{s.prn(), s.name(), s.dept(), s.cgpa(), s.backlogs(), standing(s)});
@@ -1426,6 +1465,70 @@ static final class Kit {
         return card;
     }
 
+    /** Admin-style KPI card: big dark number on the left, title and caption on the right. */
+    static Card kpiCardPlain(String title, JLabel value, String sub) {
+        Card card = new Card();
+        card.setLayout(new BorderLayout(12, 0));
+        card.setBorder(javax.swing.BorderFactory.createCompoundBorder(
+                new LineBorder(BORDER, 1), new EmptyBorder(14, 16, 14, 14)));
+        value.setFont(font(Font.BOLD, 30));
+        value.setForeground(Color.BLACK);
+        JPanel text = new JPanel();
+        text.setOpaque(false);
+        text.setLayout(new BoxLayout(text, BoxLayout.Y_AXIS));
+        JLabel t = new JLabel(title);
+        t.setFont(font(Font.BOLD, 13));
+        t.setForeground(Color.BLACK);
+        JLabel c = new JLabel(sub);
+        c.setFont(font(Font.PLAIN, 11));
+        c.setForeground(MUTED);
+        text.add(Box.createVerticalGlue());
+        text.add(t);
+        text.add(Box.createVerticalStrut(2));
+        text.add(c);
+        text.add(Box.createVerticalGlue());
+        card.add(value, BorderLayout.WEST);
+        card.add(text, BorderLayout.CENTER);
+        return card;
+    }
+
+    /** One row of a "recent items" list: bold title, muted detail, right-aligned tag. */
+    static JPanel listRow(String title, String detail, String tag, Color tagColor) {
+        JPanel row = new JPanel(new BorderLayout(10, 0));
+        row.setOpaque(false);
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
+        row.setBorder(javax.swing.BorderFactory.createCompoundBorder(
+                javax.swing.BorderFactory.createMatteBorder(0, 0, 1, 0, BORDER), new EmptyBorder(9, 0, 9, 0)));
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 62));
+        JLabel t = new JLabel(title);
+        t.setFont(font(Font.BOLD, 14));
+        t.setForeground(Color.BLACK);
+        JLabel d = new JLabel(detail);
+        d.setFont(font(Font.PLAIN, 12));
+        d.setForeground(MUTED);
+        JPanel left = new JPanel();
+        left.setOpaque(false);
+        left.setLayout(new BoxLayout(left, BoxLayout.Y_AXIS));
+        left.add(t);
+        left.add(Box.createVerticalStrut(3));
+        left.add(d);
+        JLabel g = new JLabel(tag);
+        g.setFont(font(Font.BOLD, 12));
+        g.setForeground(tagColor);
+        row.add(left, BorderLayout.CENTER);
+        row.add(g, BorderLayout.EAST);
+        return row;
+    }
+
+    /** Card header with a title on the left and a small muted count on the right. */
+    static JPanel listHead(String title, JLabel right) {
+        JPanel head = new JPanel(new BorderLayout(10, 0));
+        head.setOpaque(false);
+        head.add(h2(title), BorderLayout.WEST);
+        head.add(right, BorderLayout.EAST);
+        return head;
+    }
+
     /** Alternative KPI card: coloured top edge, title above a big number. */
     static Card kpiCardTop(String title, JLabel value, String sub, Color accent) {
         Card card = new Card();
@@ -1467,11 +1570,19 @@ static final class Kit {
         private final LinkedHashMap<String, Integer> data = new LinkedHashMap<>();
         private final Color[] colors;
         private String center = "";
+        private boolean below;
 
         Donut(Color... colors) {
             this.colors = colors;
             setOpaque(false);
             setPreferredSize(new Dimension(300, 190));
+        }
+
+        /** Draws the legend in a row under the ring (admin dashboard look). */
+        Donut legendBelow() {
+            below = true;
+            setPreferredSize(new Dimension(300, 215));
+            return this;
         }
 
         void set(Map<String, Integer> values, String centerText) {
@@ -1490,9 +1601,9 @@ static final class Kit {
 
             int total = 0;
             for (int v : data.values()) total += Math.max(0, v);
-            int d = Math.min(getHeight() - 20, 150);
+            int d = below ? Math.min(getHeight() - 62, 120) : Math.min(getHeight() - 20, 150);
             int x = 14;
-            int y = (getHeight() - d) / 2;
+            int y = below ? 8 : (getHeight() - d) / 2;
             float sw = d * 0.22f;
 
             if (total == 0) {
@@ -1524,6 +1635,28 @@ static final class Kit {
             FontMetrics fm = g2.getFontMetrics();
             g2.drawString(center, x + (d - fm.stringWidth(center)) / 2, y + d / 2 + fm.getAscent() / 2 - 2);
 
+            if (below) {
+                int bx = x + 6;
+                int by = y + d + 22;
+                i = 0;
+                g2.setFont(font(Font.PLAIN, 12));
+                FontMetrics lm = g2.getFontMetrics();
+                for (Map.Entry<String, Integer> e : data.entrySet()) {
+                    String txt = e.getKey() + " (" + e.getValue() + ")";
+                    if (bx + 20 + lm.stringWidth(txt) > getWidth() && bx > x + 6) {
+                        bx = x + 6;
+                        by += 22;
+                    }
+                    g2.setColor(colors[i % colors.length]);
+                    g2.fillRect(bx, by - 10, 12, 12);
+                    g2.setColor(TEXT);
+                    g2.drawString(txt, bx + 18, by);
+                    bx += 18 + lm.stringWidth(txt) + 28;
+                    i++;
+                }
+                g2.dispose();
+                return;
+            }
             int ly = y + Math.max(10, d / 2 - data.size() * 12);
             int lx = x + d + 22;
             i = 0;
