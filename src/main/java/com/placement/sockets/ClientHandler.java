@@ -27,6 +27,7 @@ public class ClientHandler implements Runnable {
                 case "GET_DASHBOARD_STATS"->stats(r,w);case "ADD_FACULTY"->addFaculty(r,w);case "GET_FACULTY"->getFaculty(r,w);case "ADD_STUDENT"->addStudent(r,w);
                 case "APPLY_JOB"->apply(r,w);case "GET_MY_APPLICATIONS"->myApplications(r,w);case "LOGOUT"->logout(r,w);
                 case "GET_MY_PROFILE" -> getMyProfile(r, w);
+                case "DELETE_FACULTY" -> deleteFaculty(r, w);
                 default->{if(resumeCommands.handles(cmd))resumeCommands.handle(cmd,r,w);else w.println("FAILED|Unknown command: "+cmd);}
             }
         }catch(Exception e){System.out.println("Client handler error: "+e.getMessage());}
@@ -44,6 +45,35 @@ public class ClientHandler implements Runnable {
     private void sendNotification(BufferedReader r,PrintWriter w)throws Exception{String t=token(r,w);if(t==null||!role(t,w,"ADMIN","TPO","TPC"))return;JobPosting j=jobs.getJob(r.readLine());String csv=r.readLine();if(j==null){w.println("FAILED|Job not found.");return;}Notification n=notifications.sendJobEligibilityNotification(j,Arrays.asList(csv.split(",")));w.println("SUCCESS|"+n.getId()+"|"+n.getRecipientCount());}
     private void sendGeneral(BufferedReader r,PrintWriter w)throws Exception{String t=token(r,w);if(t==null||!role(t,w,"ADMIN","TPO","TPC"))return;String sub=r.readLine(),msg=r.readLine(),group=r.readLine();List<String> rec="ALL".equalsIgnoreCase(group)?students.getAllStudents().stream().map(Student::getPrn).toList():List.of();Notification n=notifications.sendGeneralNotification(sub,msg,rec);w.println("SUCCESS|"+n.getId()+"|"+n.getRecipientCount());}
     private void getNotifications(BufferedReader r,PrintWriter w)throws Exception{String t=token(r,w);if(t==null||!role(t,w,"ADMIN","TPO","TPC","DIRECTOR","DEAN","STUDENT"))return;write(w,notifications.getHistory().stream().map(Notification::toProtocolLine).toList());}
+    
+private void deleteFaculty(BufferedReader r, PrintWriter w)
+        throws Exception {
+
+    String t = token(r, w);
+
+    if (t == null || !role(t, w, "ADMIN")) {
+        return;
+    }
+
+    String idText = r.readLine();
+
+    int facultyId;
+    try {
+        facultyId = Integer.parseInt(idText);
+    } catch (NumberFormatException ex) {
+        w.println("FAILED|Invalid faculty ID.");
+        return;
+    }
+
+    boolean deleted = admin.deleteFaculty(facultyId);
+
+    if (deleted) {
+        w.println("SUCCESS|User deleted successfully.");
+    } else {
+        w.println("FAILED|User not found.");
+    }
+}
+
     private void stats(BufferedReader r,PrintWriter w)throws Exception{String t=token(r,w);if(t==null||!role(t,w,"ADMIN","TPO","TPC","DIRECTOR","DEAN"))return;List<JobPosting> js=jobs.getAllJobs();List<Student> ss=students.getAllStudents();int pending=0;for(JobPosting j:js)pending+=students.getEligibleUnnotifiedStudents(j).size();w.println("SUCCESS|"+js.size()+"|"+pending+"|"+notifications.getHistory().size()+"|"+ss.size());}
     private void addStudent(BufferedReader r,PrintWriter w)throws IOException {
         String t=token(r,w);if(t==null||!role(t,w,"ADMIN"))return;

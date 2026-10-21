@@ -1999,36 +1999,70 @@ try {
         );
 
 
+    
+delete.addActionListener(e -> {
+    int selectedRow = table.getSelectedRow();
 
-        delete.addActionListener(e -> {
+    if (selectedRow < 0) {
+        showSelectMessage();
+        return;
+    }
 
+    int modelRow = table.convertRowIndexToModel(selectedRow);
 
+    // Column 0 contains the actual faculty_id from MySQL.
+    String facultyId = userModel.getValueAt(modelRow, 0).toString();
+    String userName = userModel.getValueAt(modelRow, 1).toString();
 
-            int row = table.getSelectedRow();
+    int choice = JOptionPane.showConfirmDialog(
+            this,
+            "Are you sure you want to delete " + userName + "?",
+            "Confirm Delete",
+            JOptionPane.YES_NO_OPTION,
+            JOptionPane.WARNING_MESSAGE
+    );
 
+    if (choice != JOptionPane.YES_OPTION) {
+        return;
+    }
 
+    try {
+        SocketClient.Response response = client.sendRequest(
+                "DELETE_FACULTY",
+                sessionToken,
+                facultyId
+        );
 
-            if (row < 0) {
-
-                showSelectMessage();
-
-                return;
-
-            }
-
-
-
-            users.remove(
-
-                    table.convertRowIndexToModel(row)
-
+        if (!response.success) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Could not delete user: " + response.payload,
+                    "Delete Failed",
+                    JOptionPane.ERROR_MESSAGE
             );
+            return;
+        }
 
+        JOptionPane.showMessageDialog(
+                this,
+                response.payload,
+                "Success",
+                JOptionPane.INFORMATION_MESSAGE
+        );
 
+        // Reload the table from the database.
+        refreshUsers();
 
-            refreshUsers();
+    } catch (Exception ex) {
+        JOptionPane.showMessageDialog(
+                this,
+                "Unable to delete user: " + ex.getMessage(),
+                "Connection Error",
+                JOptionPane.ERROR_MESSAGE
+        );
+    }
+});
 
-        });
 
 
 

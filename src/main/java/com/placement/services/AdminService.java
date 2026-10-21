@@ -10,4 +10,13 @@ public class AdminService {
         if(!(role.equals("ADMIN")||role.equals("TPO")||role.equals("TPC")||role.equals("DIRECTOR")||role.equals("DEAN")))throw new IllegalArgumentException("Invalid faculty role.");
         Faculty f=new Faculty();f.setName(name);f.setEmail(email);f.setPassword(PasswordHasher.hashPassword(password));f.setRole(role);f.setDepartment(department);f.setPhone(phone);return dao.insert(f);
     }
+    
+public boolean deleteFaculty(int facultyId) throws Exception {
+    if (facultyId <= 0) {
+        throw new IllegalArgumentException("Invalid faculty ID.");
+    }
+
+    return dao.deleteById(facultyId);
+}
+
 }

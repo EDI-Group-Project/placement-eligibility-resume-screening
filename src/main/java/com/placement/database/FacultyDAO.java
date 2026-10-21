@@ -27,4 +27,19 @@ public class FacultyDAO {
     private Faculty map(ResultSet rs)throws SQLException{
         Faculty f=new Faculty();f.setFacultyId(rs.getInt("faculty_id"));f.setName(rs.getString("name"));f.setEmail(rs.getString("email"));f.setPassword(rs.getString("password"));f.setRole(rs.getString("role"));f.setDepartment(rs.getString("department"));f.setPhone(rs.getString("phone"));return f;
     }
+   
+public boolean deleteById(int facultyId) throws SQLException {
+    String sql = "DELETE FROM faculty WHERE faculty_id = ?";
+
+    try (Connection connection = DatabaseConnection.getConnection();
+         PreparedStatement statement = connection.prepareStatement(sql)) {
+
+        statement.setInt(1, facultyId);
+
+        int rowsDeleted = statement.executeUpdate();
+
+        return rowsDeleted == 1;
+    }
+}
+
 }
