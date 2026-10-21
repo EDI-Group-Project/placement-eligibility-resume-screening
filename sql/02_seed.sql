@@ -512,6 +512,117 @@ WHERE c.hr_email='monika@cybage.com'
 AND NOT EXISTS (SELECT 1 FROM job_postings WHERE job_id='JOB020');
 
 
+
+
+-- ============================================================
+-- DEMO APPLICATIONS
+-- Idempotent seed data: Aarav Sharma is included explicitly.
+-- ============================================================
+
+INSERT INTO applications (job_id, student_id, status, screening_score, applied_at)
+SELECT v.job_id, s.student_id, v.status, v.score, v.applied_at
+FROM (
+    SELECT 'JOB001' AS job_id, 'aarav@gmail.com' AS email, 'SHORTLISTED' AS status, 88.50 AS score, '2026-09-08 10:15:00' AS applied_at
+    UNION ALL SELECT 'JOB002', 'aarav@gmail.com', 'INTERVIEW', 91.00, '2026-09-09 11:30:00'
+    UNION ALL SELECT 'JOB014', 'aarav@gmail.com', 'APPLIED', NULL, '2026-10-14 09:20:00'
+    UNION ALL SELECT 'JOB015', 'aarav@gmail.com', 'SCREENED', 89.25, '2026-10-16 14:10:00'
+    UNION ALL SELECT 'JOB001', 'priya@gmail.com', 'SHORTLISTED', 84.00, '2026-09-10 12:00:00'
+    UNION ALL SELECT 'JOB002', 'priya@gmail.com', 'APPLIED', NULL, '2026-09-12 09:45:00'
+    UNION ALL SELECT 'JOB017', 'priya@gmail.com', 'SCREENED', 82.50, '2026-10-11 10:00:00'
+    UNION ALL SELECT 'JOB015', 'sneha@gmail.com', 'INTERVIEW', 94.00, '2026-10-12 13:30:00'
+    UNION ALL SELECT 'JOB016', 'sneha@gmail.com', 'SHORTLISTED', 92.00, '2026-10-13 15:15:00'
+    UNION ALL SELECT 'JOB001', 'ananya@gmail.com', 'APPLIED', NULL, '2026-09-13 10:20:00'
+    UNION ALL SELECT 'JOB014', 'ananya@gmail.com', 'SCREENED', 87.00, '2026-10-14 11:10:00'
+    UNION ALL SELECT 'JOB015', 'meera@gmail.com', 'SELECTED', 96.50, '2026-10-15 09:00:00'
+    UNION ALL SELECT 'JOB017', 'nisha@gmail.com', 'SHORTLISTED', 93.00, '2026-10-16 16:00:00'
+    UNION ALL SELECT 'JOB018', 'kavya@gmail.com', 'APPLIED', NULL, '2026-10-17 10:40:00'
+    UNION ALL SELECT 'JOB017', 'kunal@gmail.com', 'REJECTED', 61.00, '2026-10-08 12:25:00'
+) AS v
+JOIN students s ON s.email = v.email
+JOIN job_postings j ON j.job_id = v.job_id
+WHERE NOT EXISTS (
+    SELECT 1 FROM applications a
+    WHERE a.job_id = v.job_id AND a.student_id = s.student_id
+);
+
+
+-- ============================================================
+-- DEMO NOTIFICATIONS
+-- ============================================================
+
+INSERT INTO notifications (job_id, subject, message, recipient_group, recipient_count, created_at)
+SELECT 'JOB014', 'Amazon placement drive is open',
+       'Applications are invited for Systems Development Engineer (10 LPA). Review the eligibility criteria and apply before the listed deadline.',
+       'Eligible students', 0, '2026-10-14 08:30:00'
+WHERE EXISTS (SELECT 1 FROM job_postings WHERE job_id='JOB014')
+  AND NOT EXISTS (SELECT 1 FROM notifications WHERE job_id='JOB014' AND subject='Amazon placement drive is open');
+
+INSERT INTO notifications (job_id, subject, message, recipient_group, recipient_count, created_at)
+SELECT 'JOB015', 'Microsoft software engineer applications',
+       'The Software Engineer placement drive is available for eligible 2027 graduates. Check your academic and skill criteria before applying.',
+       'CSE and IT students', 0, '2026-10-15 09:00:00'
+WHERE EXISTS (SELECT 1 FROM job_postings WHERE job_id='JOB015')
+  AND NOT EXISTS (SELECT 1 FROM notifications WHERE job_id='JOB015' AND subject='Microsoft software engineer applications');
+
+INSERT INTO notifications (job_id, subject, message, recipient_group, recipient_count, created_at)
+SELECT 'JOB018', 'Hexaware full stack developer drive',
+       'A Full Stack Developer opportunity is listed. Review the required JavaScript and React skills and confirm your eligibility.',
+       'CSE, IT and ECE students', 0, '2026-10-17 09:15:00'
+WHERE EXISTS (SELECT 1 FROM job_postings WHERE job_id='JOB018')
+  AND NOT EXISTS (SELECT 1 FROM notifications WHERE job_id='JOB018' AND subject='Hexaware full stack developer drive');
+
+INSERT INTO notifications (job_id, subject, message, recipient_group, recipient_count, created_at)
+SELECT NULL, 'Placement profile update reminder',
+       'Please verify your PRN, department, CGPA, backlog count, contact information, skills and resume details in your placement profile.',
+       'All students', 0, '2026-10-18 08:00:00'
+WHERE NOT EXISTS (SELECT 1 FROM notifications WHERE job_id IS NULL AND subject='Placement profile update reminder');
+
+INSERT INTO notifications (job_id, subject, message, recipient_group, recipient_count, created_at)
+SELECT NULL, 'Placement process update',
+       'Application statuses are being updated by the placement team. Check your dashboard for screening, shortlist and interview updates.',
+       'Students with applications', 0, '2026-10-19 12:00:00'
+WHERE NOT EXISTS (SELECT 1 FROM notifications WHERE job_id IS NULL AND subject='Placement process update');
+
+-- Link job-specific notices to relevant students. INSERT IGNORE keeps reruns safe.
+INSERT IGNORE INTO notification_recipients (notification_id, student_id, delivered, created_at)
+SELECT n.notification_id, s.student_id, TRUE, n.created_at
+FROM notifications n
+JOIN students s ON s.passing_year=2027
+JOIN job_postings j ON j.job_id=n.job_id
+JOIN eligibility e ON e.eligibility_id=j.eligibility_id
+WHERE n.subject IN ('Amazon placement drive is open','Microsoft software engineer applications','Hexaware full stack developer drive')
+  AND FIND_IN_SET(s.department, e.department) > 0
+  AND s.cgpa >= e.min_cgpa
+  AND s.backlogs <= e.max_backlogs;
+
+-- General notices are addressed to all students or current applicants.
+INSERT IGNORE INTO notification_recipients (notification_id, student_id, delivered, created_at)
+SELECT n.notification_id, s.student_id, TRUE, n.created_at
+FROM notifications n
+CROSS JOIN students s
+WHERE n.subject='Placement profile update reminder';
+
+INSERT IGNORE INTO notification_recipients (notification_id, student_id, delivered, created_at)
+SELECT n.notification_id, a.student_id, TRUE, n.created_at
+FROM notifications n
+CROSS JOIN applications a
+WHERE n.subject='Placement process update';
+
+-- Keep the displayed recipient count consistent with the recipient relation.
+UPDATE notifications n
+SET recipient_count = (
+    SELECT COUNT(*) FROM notification_recipients nr
+    WHERE nr.notification_id = n.notification_id
+)
+WHERE n.subject IN (
+    'Amazon placement drive is open',
+    'Microsoft software engineer applications',
+    'Hexaware full stack developer drive',
+    'Placement profile update reminder',
+    'Placement process update'
+);
+
+
 -- ============================================================
 -- VERIFY
 -- ============================================================
