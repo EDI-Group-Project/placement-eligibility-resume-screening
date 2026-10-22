@@ -371,23 +371,23 @@ class ResumeFeaturesIntegrationTest {
     void applicationDao_screeningScoreOnlyUpdatesExistingApplications_andKeepsManualStatuses() throws Exception {
         ApplicationDAO dao = new ApplicationDAO();
         int rohan = idOf("PRN003"), vivek = idOf("PRN005");
-        claimApplication("JOB002", rohan);
-        claimApplication("JOB002", vivek);
+        claimApplication("JOB004", rohan);
+        claimApplication("JOB004", vivek);
 
-        dao.saveScreeningScore("JOB002", rohan, 55.5);                       // Rohan never applied
-        assertFalse(dao.exists("JOB002", rohan), "no application may appear");
+        dao.saveScreeningScore("JOB004", rohan, 55.5);                       // Rohan never applied
+        assertFalse(dao.exists("JOB004", rohan), "no application may appear");
 
-        dao.insert("JOB002", rohan);
-        dao.insert("JOB002", vivek);
-        dao.saveScreeningScore("JOB002", rohan, 61.25);
+        dao.insert("JOB004", rohan);
+        dao.insert("JOB004", vivek);
+        dao.saveScreeningScore("JOB004", rohan, 61.25);
         try (Connection c = DatabaseConnection.getConnection();
-             PreparedStatement ps = c.prepareStatement("UPDATE applications SET status='SHORTLISTED' WHERE job_id='JOB002' AND student_id=?")) {
+             PreparedStatement ps = c.prepareStatement("UPDATE applications SET status='SHORTLISTED' WHERE job_id='JOB004' AND student_id=?")) {
             ps.setInt(1, vivek);
             ps.executeUpdate();                                              // a status someone set by hand
         }
-        dao.saveScreeningScore("JOB002", vivek, 40.0);
+        dao.saveScreeningScore("JOB004", vivek, 40.0);
 
-        List<ApplicationDAO.Applicant> applicants = dao.findApplicantsByJob("JOB002");
+        List<ApplicationDAO.Applicant> applicants = dao.findApplicantsByJob("JOB004");
         assertEquals(2, applicants.size());
         assertEquals(List.of(rohan, vivek), applicants.stream().map(a -> a.student().getStudentId()).toList(), "earliest application first");
         ApplicationDAO.Applicant r = applicants.get(0), v = applicants.get(1);
