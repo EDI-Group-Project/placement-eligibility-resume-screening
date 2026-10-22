@@ -209,9 +209,19 @@ public class ResumeCommandHandler {
             return;
         }
 
-        ResumeScreeningService.Outcome outcome = isStudent ? service.screen(student, job) : service.screenAndSave(student, job);
+        // Screening from the Student Dashboard must use the same persistence path as staff screening.
+        // screenAndSave updates only an EXISTING application row; it never creates a fake application.
+        boolean hasApplication = applicationDAO.exists(job.getId(), studentId);
+        ResumeScreeningService.Outcome outcome = service.screenAndSave(student, job);
         ScreeningResult r = outcome.screening();
         List<String> lines = new ArrayList<>();
+        if (outcome.resume().isEmpty()) {
+            lines.add("PERSISTENCE|Score was not saved because no readable resume text was extracted. Check the uploaded resume format.");
+        } else if (hasApplication) {
+            lines.add("PERSISTENCE|Score saved to your existing application record. The application table is being refreshed.");
+        } else {
+            lines.add("PERSISTENCE|Screening completed, but no application record exists for this job. The score was not added to applications; apply for the job to create an application record.");
+        }
         lines.add("TOTAL|" + r.getTotalScore());
         lines.add("SKILL|" + r.getSkillScore());
         lines.add("PROJECTS|" + r.getProjectScore());

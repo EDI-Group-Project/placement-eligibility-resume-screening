@@ -1143,6 +1143,7 @@ private void setProfileValue(String fieldName, String value) {
                 if (key.equals("MISSING")) missingSkillsPanel.setItems(splitItems(value));
             }
             Map<String, String> headings = Map.ofEntries(
+                    Map.entry("PERSISTENCE", "Database save status"),
                     Map.entry("TOTAL", "Overall screening score"),
                     Map.entry("SKILL", "Skill score"),
                     Map.entry("PROJECTS", "Projects score"),
@@ -1170,6 +1171,9 @@ private void setProfileValue(String fieldName, String value) {
                 report.append('\n');
             }
             jobScreeningArea.setText(report.toString().isBlank() ? "The server returned an empty screening report." : report.toString().trim());
+            // GET_MY_APPLICATIONS reads screening_score from MySQL. Reload it after screening so
+            // the Applications table, overview, and report summary show the newly saved value.
+            loadApplications();
         }, error -> jobScreeningArea.setText("Screening report unavailable: " + error.getMessage()));
     }
 

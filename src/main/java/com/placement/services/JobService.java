@@ -14,6 +14,10 @@ public class JobService {
     public List<JobPosting> getAllJobs() throws Exception {return jobDAO.findAll();}
     public JobPosting getJob(String id) throws Exception {return jobDAO.findById(id);}
     public JobPosting addJob(String company,String role,String minPackage,double minCgpa,List<String> branches,int maxBacklogs,String deadline,int createdByFacultyId) throws Exception {
+        return addJob(company,role,minPackage,minCgpa,branches,maxBacklogs,List.of(),deadline,createdByFacultyId);
+    }
+
+    public JobPosting addJob(String company,String role,String minPackage,double minCgpa,List<String> branches,int maxBacklogs,List<String> requiredSkills,String deadline,int createdByFacultyId) throws Exception {
         Company c=companyDAO.findByNameOrEmail(company);
         if(c==null) throw new IllegalArgumentException("Company must be an existing company name or recruiter email.");
         JobPosting j=new JobPosting();
@@ -21,7 +25,7 @@ public class JobService {
         j.setCompanyId(c.getCompanyId()); j.setCompany(c.getCompanyName()); j.setRole(role); j.setMinPackage(minPackage);
         j.setMinCgpa(minCgpa); j.setBranches(branches); j.setMaxBacklogs(maxBacklogs);
         j.setPassingYear(java.time.LocalDate.now().getYear()+1);
-        j.setRequiredSkills(List.of()); j.setDeadline(deadline);
+        j.setRequiredSkills(requiredSkills == null ? List.of() : requiredSkills.stream().filter(java.util.Objects::nonNull).map(String::trim).filter(x -> !x.isBlank()).distinct().toList()); j.setDeadline(deadline);
         return jobDAO.insert(j,createdByFacultyId);
     }
 }

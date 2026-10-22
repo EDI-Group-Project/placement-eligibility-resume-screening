@@ -1,0 +1,139 @@
+%PDF-1.3
+%“Œ‹ž ReportLab Generated PDF document (opensource)
+1 0 obj
+<<
+/F1 2 0 R /F2 3 0 R /F3 4 0 R
+>>
+endobj
+2 0 obj
+<<
+/BaseFont /Helvetica /Encoding /WinAnsiEncoding /Name /F1 /Subtype /Type1 /Type /Font
+>>
+endobj
+3 0 obj
+<<
+/BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding /Name /F2 /Subtype /Type1 /Type /Font
+>>
+endobj
+4 0 obj
+<<
+/BaseFont /Helvetica-Oblique /Encoding /WinAnsiEncoding /Name /F3 /Subtype /Type1 /Type /Font
+>>
+endobj
+5 0 obj
+<<
+/Contents 9 0 R /MediaBox [ 0 0 612 792 ] /Parent 8 0 R /Resources <<
+/Font 1 0 R /ProcSet [ /PDF /Text /ImageB /ImageC /ImageI ]
+>> /Rotate 0 /Trans <<
+
+>> 
+  /Type /Page
+>>
+endobj
+6 0 obj
+<<
+/PageMode /UseNone /Pages 8 0 R /Type /Catalog
+>>
+endobj
+7 0 obj
+<<
+/Author (anonymous) /CreationDate (D:20261022031549+00'00') /Creator (anonymous) /Keywords () /ModDate (D:20261022031549+00'00') /Producer (ReportLab PDF Library - \(opensource\)) 
+  /Subject (unspecified) /Title (untitled) /Trapped /False
+>>
+endobj
+8 0 obj
+<<
+/Count 1 /Kids [ 5 0 R ] /Type /Pages
+>>
+endobj
+9 0 obj
+<<
+/Length 2551
+>>
+stream
+1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
+BT /F2 17 Tf 20.4 TL ET
+BT 1 0 0 1 259.7175 750 Tm (Rahul More) Tj T* ET
+BT /F1 8.5 Tf 10.2 TL ET
+BT 1 0 0 1 242.6028 735 Tm (Engineering Student | ECE | India) Tj T* ET
+BT 1 0 0 1 210.188 722 Tm (9876543229  |  rahul@gmail.com  |  PRN: PRN015) Tj T* ET
+BT /F2 11 Tf 13.2 TL ET
+BT 1 0 0 1 42 702 Tm (Education) Tj T* ET
+.5 w
+n 42 699 m 570 699 l S
+BT /F2 9 Tf 10.8 TL ET
+BT 1 0 0 1 42 687 Tm (Bachelor of Engineering / Technology - ECE) Tj T* ET
+BT /F1 8.5 Tf 10.2 TL ET
+BT 1 0 0 1 513.2965 687 Tm (Expected 2027) Tj T* ET
+BT /F1 8.3 Tf 9.96 TL ET
+BT 1 0 0 1 42 675 Tm (CGPA: 6.70/10 | Department: ECE | Current semester: see student record | Backlogs: see student record) Tj T* ET
+BT /F2 11 Tf 13.2 TL ET
+BT 1 0 0 1 42 661 Tm (Experience) Tj T* ET
+.5 w
+n 42 658 m 570 658 l S
+BT /F2 9 Tf 10.8 TL ET
+BT 1 0 0 1 42 646 Tm (Embedded Project Trainee \(Academic Simulation\)) Tj T* ET
+BT /F1 8.3 Tf 9.96 TL ET
+BT 1 0 0 1 472.6742 646 Tm (Academic / Sample Profile) Tj T* ET
+BT /F1 8.2 Tf 9.84 TL ET
+BT 1 0 0 1 50 634 Tm (Practiced Arduino sketches, digital input/output, and basic sensor interfacing in guided lab exercises.) Tj T* ET
+BT /F2 11 Tf 13.2 TL ET
+BT 1 0 0 1 42 620.5 Tm (Projects) Tj T* ET
+.5 w
+n 42 617.5 m 570 617.5 l S
+BT /F2 8.8 Tf 10.56 TL ET
+BT 1 0 0 1 42 605.5 Tm (Automatic Light Controller) Tj T* ET
+BT /F3 8 Tf 9.6 TL ET
+BT 1 0 0 1 532.208 605.5 Tm (Arduino, C) Tj T* ET
+BT /F1 8.1 Tf 9.72 TL ET
+BT 1 0 0 1 50 594.5 Tm (Prototyped a light control sequence using sensor input and a configurable threshold.) Tj T* ET
+BT /F2 8.8 Tf 10.56 TL ET
+BT 1 0 0 1 42 583.3 Tm (Serial Sensor Monitor) Tj T* ET
+BT /F3 8 Tf 9.6 TL ET
+BT 1 0 0 1 521.088 583.3 Tm (C, Embedded) Tj T* ET
+BT /F1 8.1 Tf 9.72 TL ET
+BT 1 0 0 1 50 572.3 Tm (Recorded sample sensor readings over serial output and documented observed behavior.) Tj T* ET
+BT /F2 11 Tf 13.2 TL ET
+BT 1 0 0 1 42 561.1 Tm (Technical Skills) Tj T* ET
+.5 w
+n 42 558.1 m 570 558.1 l S
+BT /F1 8.3 Tf 9.96 TL ET
+BT 1 0 0 1 42 546.1 Tm (C, Arduino, Embedded Systems, Sensors, Digital Electronics, Troubleshooting) Tj T* ET
+BT /F2 11 Tf 13.2 TL ET
+BT 1 0 0 1 42 532.1 Tm (Achievements) Tj T* ET
+.5 w
+n 42 529.1 m 570 529.1 l S
+BT /F1 8.1 Tf 9.72 TL ET
+BT 1 0 0 1 50 517.1 Tm (- Completed an Arduino laboratory mini-project.) Tj T* ET
+BT /F1 8.1 Tf 9.72 TL ET
+BT 1 0 0 1 50 507.9 Tm (- Documented circuit tests and observed outputs.) Tj T* ET
+BT /F3 6.5 Tf 7.8 TL ET
+BT 1 0 0 1 413.935 20 Tm (Illustrative resume content for placement portal testing) Tj T* ET
+ 
+endstream
+endobj
+xref
+0 10
+0000000000 65535 f 
+0000000061 00000 n 
+0000000112 00000 n 
+0000000219 00000 n 
+0000000331 00000 n 
+0000000446 00000 n 
+0000000639 00000 n 
+0000000707 00000 n 
+0000000968 00000 n 
+0000001027 00000 n 
+trailer
+<<
+/ID 
+[<638e1786ce494e9198b3c64931743acc><638e1786ce494e9198b3c64931743acc>]
+% ReportLab generated PDF document -- digest (opensource)
+
+/Info 7 0 R
+/Root 6 0 R
+/Size 10
+>>
+startxref
+3629
+%%EOF

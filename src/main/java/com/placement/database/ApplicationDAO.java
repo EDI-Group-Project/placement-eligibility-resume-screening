@@ -3,9 +3,11 @@ import com.placement.models.Application;
 import com.placement.models.Student;
 import java.sql.*;
 import java.time.format.DateTimeFormatter;
+import java.util.logging.Logger;
 import java.util.ArrayList;
 import java.util.List;
 public class ApplicationDAO {
+    private static final Logger LOGGER = Logger.getLogger(ApplicationDAO.class.getName());
     public boolean exists(String jobId,int studentId)throws SQLException{try(Connection c=DatabaseConnection.getConnection();PreparedStatement ps=c.prepareStatement("SELECT 1 FROM applications WHERE job_id=? AND student_id=?")){ps.setString(1,jobId);ps.setInt(2,studentId);try(ResultSet rs=ps.executeQuery()){return rs.next();}}}
     public long insert(String jobId,int studentId)throws SQLException{try(Connection c=DatabaseConnection.getConnection();PreparedStatement ps=c.prepareStatement("INSERT INTO applications(job_id,student_id,status) VALUES(?,?,?)",Statement.RETURN_GENERATED_KEYS)){ps.setString(1,jobId);ps.setInt(2,studentId);ps.setString(3,"APPLIED");ps.executeUpdate();try(ResultSet rs=ps.getGeneratedKeys()){return rs.next()?rs.getLong(1):0;}}}
     public List<Application> findByStudent(int studentId)throws SQLException{
@@ -21,8 +23,16 @@ public class ApplicationDAO {
     public void saveScreeningScore(String jobId, int studentId, double score) throws SQLException {
         String update = "UPDATE applications SET screening_score=?, status=CASE WHEN status='APPLIED' THEN 'SCREENED' ELSE status END WHERE job_id=? AND student_id=?";
         try (Connection c = DatabaseConnection.getConnection(); PreparedStatement ps = c.prepareStatement(update)) {
-            ps.setDouble(1, score); ps.setString(2, jobId); ps.setInt(3, studentId);
-            ps.executeUpdate();
+            ps.setDouble(1, score);
+            ps.setString(2, jobId);
+            ps.setInt(3, studentId);
+            int rowsUpdated = ps.executeUpdate();
+            // Zero rows is valid when the student is preview-screening a job they have not applied to.
+            // Do not insert an application here: applications must represent actual applications only.
+            if (rowsUpdated == 0) {
+                // Expected when a student previews a job before applying. Never INSERT an application here.
+                LOGGER.fine("No existing application row was updated by resume screening.");
+            }
         }
     }
 
